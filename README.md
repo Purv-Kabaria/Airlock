@@ -135,6 +135,8 @@ airlock serve
 
 If your agent already talks to a Postgres or DuckDB MCP server or connection string, integration is replacing that endpoint with Airlock's. Nothing else changes — Airlock exposes the tool surface the agent already expects (`warehouse_run_query`, `warehouse_list_tables`, `warehouse_describe_table`). It's a drop-in the same way a reverse proxy is a drop-in for a human client.
 
+`warehouse_describe_table` is more than a schema dump: it annotates every column with the policy that would fire on it — allow, mask (with the strategy), or deny (with the reason) — resolved through the same engine that enforces. An agent reads the card and selects only usable columns instead of learning your policy through denials. Pair Airlock with [DataHub's MCP Server](docs/datahub-mcp-composition.md) and the agent gets both halves of a DataHub-native stack: DataHub for discovery, Airlock for governed execution.
+
 ### It runs on whatever laptop a judge owns
 
 No compiler, no native build step, no platform-specific path, ever. Airlock and its dependencies install from prebuilt universal wheels everywhere (sqlglot is pure Python; DuckDB ships wheels for all our targets). CI runs the full test suite *and boots the complete demo stack* on Ubuntu, macOS, and Windows for every commit — cross-platform is verified, not hoped for.
