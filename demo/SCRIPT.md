@@ -1,5 +1,13 @@
 # Demo script
 
+Two ways to record. **Hands-free (recommended):** `python demo/record.py` plays the whole sequence
+below against the live stack with captions and pauses — you screen-record one take and read the
+word-for-word voiceover in [`VIDEO.md`](VIDEO.md) over it. No typing on camera, no typos, no timing
+risk. The retag flips `orders.status` automatically and restores it, so the run is idempotent. Use
+`--rehearse` first to confirm every beat. **Manual:** drive the terminal and the DataHub UI yourself
+with the shot list below — the only reason to do this is to click the retag in the real UI on camera,
+which is marginally more convincing than the automated tag write.
+
 Two documents in one. **Part A** is the recording shot list, timed to 2:55 against the hard
 3:00 limit. **Part B** is the unscripted rehearsal — run it before recording, and hand it to anyone
 who wants to break the thing themselves.
