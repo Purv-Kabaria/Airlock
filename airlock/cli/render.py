@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.syntax import Syntax
 from rich.table import Table
 
+from airlock.audit.datahub_sink import DatasetUsage
 from airlock.audit.record import AuditRecord
 from airlock.engine.verdicts import Envelope, EnvelopeStatus
 from airlock.policy.coverage import CoverageReport, DatasetGap, SuspectedGap
@@ -160,6 +161,29 @@ def render_proposals(gaps: tuple[SuspectedGap, ...], *, dry_run: bool) -> None:
     table.add_column("looks like", style="yellow")
     for gap in gaps:
         table.add_row(gap.dataset_name, gap.column, gap.reason)
+    console.print(table)
+
+
+def render_usage(usage: list[DatasetUsage]) -> None:
+    """Show the agent read activity DataHub holds, read back out of the catalog."""
+    if not usage:
+        console.print(
+            "[yellow]DataHub has no recorded agent activity yet. Run some queries through the "
+            "gateway, then re-run this.[/]"
+        )
+        return
+    table = Table(
+        title="Agent read activity, as recorded in DataHub (datasetUsageStatistics)",
+        title_justify="left",
+    )
+    table.add_column("dataset", style="cyan")
+    table.add_column("queries", justify="right", style="bold")
+    table.add_column("agents")
+    table.add_column("columns read")
+    for row in usage:
+        agents = ", ".join(f"{name} ({count})" for name, count in row.principals) or "-"
+        columns = ", ".join(f"{col} ({count})" for col, count in row.columns) or "-"
+        table.add_row(row.name, str(row.queries), agents, columns)
     console.print(table)
 
 

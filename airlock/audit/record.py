@@ -7,6 +7,7 @@ sinks ever see; the wire envelope stays separate.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -42,6 +43,9 @@ class AuditRecord(BaseModel):
     warehouse: str
     dataset_urns: list[str] = []
     denied: bool = False
+    # dataset urn -> columns this query read. Drives the DataHub usage write-back, and makes the
+    # local log answer "which columns has this agent actually read" without re-parsing the SQL.
+    column_reads: dict[str, list[str]] = {}
 
     @classmethod
     def from_envelope(
@@ -52,7 +56,11 @@ class AuditRecord(BaseModel):
         warehouse: str,
         coalesced: bool = False,
         dataset_urns: list[str] | None = None,
+        column_reads: Iterable[tuple[str, str]] = (),
     ) -> AuditRecord:
+        reads: dict[str, list[str]] = {}
+        for urn, column in column_reads:
+            reads.setdefault(urn, []).append(column)
         return cls(
             request_id=envelope.request_id,
             ts=datetime.now(UTC).isoformat(),
@@ -70,6 +78,7 @@ class AuditRecord(BaseModel):
             warehouse=warehouse,
             dataset_urns=sorted(set(dataset_urns or [])),
             denied=str(envelope.status) in ("denied", "error"),
+            column_reads={urn: sorted(cols) for urn, cols in sorted(reads.items())},
         )
 
 

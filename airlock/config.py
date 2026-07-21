@@ -215,6 +215,10 @@ class OtelConfig(_Strict):
 class AuditConfig(_Strict):
     jsonl: Path = Path("./audit/decisions.jsonl")
     datahub_writeback: bool = True
+    # Agent read activity as DataHub dataset usage statistics (the Stats tab): per-dataset query
+    # counts, per-column read counts, per-principal breakdown. Carries executed query text, so
+    # turn it off where query text must not leave the gateway.
+    datahub_usage: bool = True
     otel: OtelConfig = OtelConfig()
 
 

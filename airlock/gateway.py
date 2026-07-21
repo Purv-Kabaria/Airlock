@@ -17,7 +17,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from airlock.analyzer.resolve import resolve
+from airlock.analyzer.resolve import ResolvedQuery, resolve
 from airlock.analyzer.rewrite import rewrite
 from airlock.audit.jsonl import JsonlSink
 from airlock.audit.record import AuditRecord, Sink
@@ -51,6 +51,9 @@ class Plan:
     executed_sql: str | None = None
     modified: bool = False
     masked_outputs: tuple[tuple[str, str], ...] = ()
+    # (dataset_urn, column) actually read, for the DataHub usage write-back. Empty on denied plans:
+    # a blocked query read nothing, and counting it as usage would misreport the catalog.
+    column_reads: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass
@@ -228,6 +231,7 @@ class Gateway:
             latency_ms=latency_ms,
             coalesced=coalesced,
             dataset_urns=list(plan.dataset_urns),
+            column_reads=plan.column_reads,
         )
         log.info(
             "decision.made",
@@ -398,6 +402,7 @@ class Gateway:
                 timeout=timeout,
                 executed_sql=rr.executed_sql,
                 modified=False,
+                column_reads=_column_reads(resolved),
             )
 
         if statement_is_denied(verdicts):
@@ -417,6 +422,7 @@ class Gateway:
             executed_sql=rr.executed_sql,
             modified=rr.modified,
             masked_outputs=rr.masked_outputs,
+            column_reads=_column_reads(resolved),
         )
 
     async def _execute(self, principal_name: str, plan: Plan) -> tuple[QueryResult, bool]:
@@ -505,7 +511,13 @@ class Gateway:
         return graph
 
     async def _audit(
-        self, envelope: Envelope, *, latency_ms: float, coalesced: bool, dataset_urns: list[str]
+        self,
+        envelope: Envelope,
+        *,
+        latency_ms: float,
+        coalesced: bool,
+        dataset_urns: list[str],
+        column_reads: tuple[tuple[str, str], ...],
     ) -> None:
         record = AuditRecord.from_envelope(
             envelope,
@@ -513,6 +525,7 @@ class Gateway:
             warehouse=self._dialect,
             coalesced=coalesced,
             dataset_urns=dataset_urns,
+            column_reads=column_reads,
         )
         # Local, fast sinks (the append-only JSONL log) are awaited so no query is answered without
         # a durable audit record. Remote sinks are handed to the bounded drain worker.
@@ -568,6 +581,13 @@ class Gateway:
         await self._adapter.close()
         for sink in self._sinks:
             await sink.close()
+
+
+def _column_reads(resolved: ResolvedQuery) -> tuple[tuple[str, str], ...]:
+    """Distinct (dataset_urn, column) pairs the query touches, counted once per query however many
+    times the column appears. Uses the effective dataset, so a substituted read is attributed to the
+    certified table the agent actually got, not the deprecated one it asked for."""
+    return tuple(sorted({(c.dataset_urn, c.fact.name) for c in resolved.columns}))
 
 
 def _verify_masking(plan: Plan, result: QueryResult, *, sample: int = 50) -> None:

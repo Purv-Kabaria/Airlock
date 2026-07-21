@@ -25,6 +25,7 @@ from airlock.cli.render import (
     render_coverage,
     render_envelope,
     render_proposals,
+    render_usage,
 )
 from airlock.config import AirlockConfig, load_config
 from airlock.errors import AirlockError, ConfigError, SnapshotUnavailableError
@@ -251,6 +252,53 @@ def _proposals_from_gaps(gaps: tuple[Any, ...]) -> dict[str, tuple[str, ...]]:
     for gap in gaps:
         by_dataset.setdefault(gap.dataset_urn, []).append(f"{gap.column}: looks like {gap.reason}")
     return {urn: tuple(values) for urn, values in by_dataset.items()}
+
+
+@app.command()
+def usage(
+    config: Path = _CONFIG_OPT,
+    as_json: bool = typer.Option(False, "--json", help="Print the activity as JSON (for scripts)."),
+) -> None:
+    """Show the agent read activity DataHub holds, read back out of the catalog.
+
+    Airlock is the only door agents use to reach the warehouse, so it is the only source of this:
+    per-dataset query counts, per-column read counts, and a per-agent breakdown, written back as
+    DataHub's native datasetUsageStatistics and read straight from the timeseries store here (not the
+    GraphQL aggregation, which GMS caches for minutes). Compiles the snapshot only to name datasets.
+    """
+    from airlock.audit.datahub_sink import read_usage
+    from airlock.policy.compile import compile_snapshot
+
+    cfg = _load(config)
+    try:
+        graph = compile_snapshot(cfg)
+    except SnapshotUnavailableError as exc:
+        err.print(f"[red]{exc}[/]")
+        raise typer.Exit(2) from exc
+
+    try:
+        activity = read_usage(cfg, {urn: ds.name for urn, ds in graph.datasets.items()})
+    except Exception as exc:  # narrow enough: any DataHub read failure is reported, not raised
+        err.print(f"[red]Could not read usage from DataHub: {exc}[/]")
+        raise typer.Exit(2) from exc
+
+    if as_json:
+        print(
+            json.dumps(
+                [
+                    {
+                        "dataset": u.name,
+                        "queries": u.queries,
+                        "principals": [{"name": n, "count": c} for n, c in u.principals],
+                        "columns": [{"column": col, "count": c} for col, c in u.columns],
+                    }
+                    for u in activity
+                ],
+                indent=2,
+            )
+        )
+    else:
+        render_usage(activity)
 
 
 @app.command()

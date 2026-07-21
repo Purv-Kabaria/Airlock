@@ -5,16 +5,26 @@ see and query in DataHub itself:
   * airlock.lastAgentAccess   - "<iso-ts> by <principal>"
   * airlock.lastPolicySnapshot - the snapshot hash that made the decision
   * airlock.deniedAttempts    - a cumulative count, incremented on every denial
-and appends a one-line institutional-memory ledger element. Write-back is off the request path
-and best-effort: any failure is logged and never fails a query (README §12). Property definitions
-are created idempotently on first use so the properties render on the dataset page.
+and appends a one-line institutional-memory ledger element.
+
+It also writes agent read activity back as `datasetUsageStatistics`, DataHub's native usage aspect,
+which renders in the stock Stats tab: queries per dataset, reads per column, and a per-principal
+breakdown. Airlock is the only door agents have to the warehouse, so it is the only place that
+knows this - a warehouse query log attributes every agent to one service account, if it can see
+them at all.
+
+Write-back is off the request path and best-effort: any failure is logged and never fails a query
+(README §12). Property definitions are created idempotently on first use so the properties render
+on the dataset page.
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
+from collections import Counter
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from airlock.audit.record import AuditRecord
@@ -30,6 +40,32 @@ _PROP_SNAPSHOT = "airlock.lastPolicySnapshot"
 _PROP_DENIED = "airlock.deniedAttempts"
 _PROP_SUSPECTED = "airlock.suspectedSensitive"
 
+_DAY_MS = 86_400_000  # DataHub usage buckets are daily
+_TOP_SQL = 5  # how many distinct queries to surface per dataset per day
+_SQL_CHARS = 2000  # cap query text so one pathological query cannot bloat the aspect
+
+
+@dataclass
+class _DayUsage:
+    """Running tally for one dataset on one UTC day.
+
+    Re-emitted in full on every update rather than as a delta: DataHub keys a timeseries document by
+    (urn, aspect, bucket), so writing the same bucket again replaces it. That makes the write
+    idempotent and self-healing - a dropped write-back is corrected by the next query, and a
+    restart reseeds from whatever DataHub already has for the day.
+    """
+
+    queries: int = 0
+    by_principal: Counter[str] = field(default_factory=Counter)
+    by_column: Counter[str] = field(default_factory=Counter)
+    by_sql: Counter[str] = field(default_factory=Counter)
+
+    def record(self, principal: str, columns: list[str], sql: str) -> None:
+        self.queries += 1
+        self.by_principal[principal] += 1
+        self.by_column.update(columns)
+        self.by_sql[sql[:_SQL_CHARS]] += 1
+
 
 class DatahubLedgerSink:
     background = True  # runs off the request path; see Gateway._audit
@@ -42,6 +78,7 @@ class DatahubLedgerSink:
         # properties (the denied-attempts counter), so concurrent writes would race and lose
         # increments. This is off the request path, so serializing costs nothing that matters.
         self._lock = asyncio.Lock()
+        self._usage: dict[tuple[str, int], _DayUsage] = {}
 
     async def write(self, record: AuditRecord) -> None:
         try:
@@ -55,6 +92,44 @@ class DatahubLedgerSink:
         self._ensure_definitions(client)
         for urn in record.dataset_urns:
             self._write_dataset(client, urn, record)
+        if self._config.audit.datahub_usage:
+            self._write_usage(client, record)
+
+    def _write_usage(self, client: Any, record: AuditRecord) -> None:
+        """Fold this query into the day's tally for each dataset it read, and re-emit the bucket."""
+        from datahub.emitter.mcp import MetadataChangeProposalWrapper
+
+        bucket = (int(time.time() * 1000) // _DAY_MS) * _DAY_MS
+        self._usage = {k: v for k, v in self._usage.items() if k[1] == bucket}
+        for urn, columns in record.column_reads.items():
+            tally = self._usage.get((urn, bucket))
+            if tally is None:
+                tally = self._seed_usage(client, urn, bucket)
+                self._usage[(urn, bucket)] = tally
+            tally.record(record.principal, columns, record.executed_sql or record.original_sql)
+            client.emit_mcp(
+                MetadataChangeProposalWrapper(entityUrn=urn, aspect=_usage_aspect(tally, bucket))
+            )
+
+    def _seed_usage(self, client: Any, urn: str, bucket: int) -> _DayUsage:
+        """Start the day's tally from whatever DataHub already holds for this bucket, so a gateway
+        restart mid-day continues the count instead of resetting it to one."""
+        from datahub.metadata.schema_classes import DatasetUsageStatisticsClass
+
+        tally = _DayUsage()
+        existing = client.get_latest_timeseries_value(
+            entity_urn=urn, aspect_type=DatasetUsageStatisticsClass, filter_criteria_map={}
+        )
+        if existing is None or existing.timestampMillis != bucket:
+            return tally
+        tally.queries = existing.totalSqlQueries or 0
+        for user in existing.userCounts or []:
+            tally.by_principal[user.user.split(":")[-1]] = user.count
+        for fc in existing.fieldCounts or []:
+            tally.by_column[fc.fieldPath] = fc.count
+        for sql in existing.topSqlQueries or []:
+            tally.by_sql[sql] += 1
+        return tally
 
     def _write_dataset(self, client: Any, urn: str, record: AuditRecord) -> None:
         from datahub.emitter.mcp import MetadataChangeProposalWrapper
@@ -171,6 +246,32 @@ def _prop_urn(qualified: str) -> str:
     return f"urn:li:structuredProperty:{qualified}"
 
 
+def _usage_aspect(tally: _DayUsage, bucket: int) -> Any:
+    from datahub.metadata.schema_classes import (
+        CalendarIntervalClass,
+        DatasetFieldUsageCountsClass,
+        DatasetUsageStatisticsClass,
+        DatasetUserUsageCountsClass,
+        TimeWindowSizeClass,
+    )
+
+    return DatasetUsageStatisticsClass(
+        timestampMillis=bucket,
+        eventGranularity=TimeWindowSizeClass(unit=CalendarIntervalClass.DAY, multiple=1),
+        uniqueUserCount=len(tally.by_principal),
+        totalSqlQueries=tally.queries,
+        topSqlQueries=[sql for sql, _ in tally.by_sql.most_common(_TOP_SQL)],
+        userCounts=[
+            DatasetUserUsageCountsClass(user=f"urn:li:corpuser:{name}", count=count)
+            for name, count in sorted(tally.by_principal.items())
+        ],
+        fieldCounts=[
+            DatasetFieldUsageCountsClass(fieldPath=column, count=count)
+            for column, count in sorted(tally.by_column.items())
+        ],
+    )
+
+
 def _merge_and_emit(client: Any, urn: str, new_assignments: list[Any]) -> None:
     """Set `new_assignments` on a dataset's structured-properties aspect while preserving every
     other assignment already there. The aspect is the full set, so a naive emit would drop foreign
@@ -212,6 +313,47 @@ def write_classification_proposals(
         _merge_and_emit(client, urn, [assignment])
     log.info("proposals.written", datasets=len(proposals))
     return len(proposals)
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetUsage:
+    """One dataset's agent read activity, as DataHub currently holds it."""
+
+    name: str
+    queries: int
+    principals: tuple[tuple[str, int], ...]
+    columns: tuple[tuple[str, int], ...]
+
+
+def read_usage(config: AirlockConfig, datasets: Mapping[str, str]) -> list[DatasetUsage]:
+    """Read the usage statistics Airlock wrote back, from DataHub, for `datasets` (urn -> name).
+
+    Reads the timeseries aspect directly rather than the GraphQL usage aggregation: GMS caches that
+    aggregation for minutes, so a fresh write is invisible there long after it has landed. Datasets
+    with no recorded activity are omitted. Raises on connection failure - the caller reports it.
+    """
+    from datahub.ingestion.graph.client import DatahubClientConfig, DataHubGraph
+    from datahub.metadata.schema_classes import DatasetUsageStatisticsClass
+
+    client = DataHubGraph(
+        DatahubClientConfig(server=config.datahub.url, token=config.datahub.token)
+    )
+    out: list[DatasetUsage] = []
+    for urn, name in datasets.items():
+        stats = client.get_latest_timeseries_value(
+            entity_urn=urn, aspect_type=DatasetUsageStatisticsClass, filter_criteria_map={}
+        )
+        if stats is None or not stats.totalSqlQueries:
+            continue
+        out.append(
+            DatasetUsage(
+                name=name,
+                queries=stats.totalSqlQueries,
+                principals=tuple((u.user.split(":")[-1], u.count) for u in stats.userCounts or []),
+                columns=tuple((f.fieldPath, f.count) for f in stats.fieldCounts or []),
+            )
+        )
+    return sorted(out, key=lambda u: u.queries, reverse=True)
 
 
 def _ensure_suspected_definition(client: Any) -> None:
