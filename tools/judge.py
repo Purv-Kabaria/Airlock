@@ -48,7 +48,7 @@ async def main() -> int:
             try:
                 env = await gateway.run_query(sql, "growth-agent")
             except Exception as exc:
-                failures.append(f"traceback escaped for {sql[:40]!r}: {type(exc).__name__}: {exc}")
+                failures.append(f"traceback escaped for {sql[:40]!a}: {type(exc).__name__}: {exc}")
                 continue
             if not isinstance(env, Envelope) or env.status not in (
                 "denied",
@@ -56,7 +56,7 @@ async def main() -> int:
                 "executed",
                 "executed_with_modifications",
             ):
-                failures.append(f"bad envelope for {sql[:40]!r}: {env}")
+                failures.append(f"bad envelope for {sql[:40]!a}: {env}")
 
         failures += await _burst(cfg, graph, warehouse)
         failures += await _double_send(gateway)

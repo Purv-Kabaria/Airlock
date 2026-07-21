@@ -74,6 +74,20 @@ def live_snapshot(cfg):  # type: ignore[no-untyped-def]
     return compile_snapshot(cfg)
 
 
+def force_utf8_output() -> None:
+    """Make tool output encoding-proof on Windows.
+
+    A fresh Windows console gives Python a cp1252 stdout, so printing anything outside that
+    codepage - the emoji in the judge corpus, a warehouse value, a non-Latin table name - raises
+    UnicodeEncodeError. In the gauntlet that traceback would come from the *failure reporter*,
+    masking the real defect it was trying to report (README §12, the zero-traceback rule).
+    `errors="replace"` keeps output lossy-but-alive rather than fatal.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def run(main):  # type: ignore[no-untyped-def]
     """Run a tool's `main` (sync or async), turning a missing stack into a clear message + exit 2
     instead of a traceback. Use as `if __name__ == '__main__': run(main)`."""
@@ -82,6 +96,7 @@ def run(main):  # type: ignore[no-untyped-def]
 
     from airlock.errors import SnapshotUnavailableError
 
+    force_utf8_output()
     try:
         result = asyncio.run(main()) if inspect.iscoroutinefunction(main) else main()
     except SnapshotUnavailableError as exc:

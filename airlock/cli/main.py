@@ -19,9 +19,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from airlock.cli.render import console, render_audit_line, render_envelope
+from airlock.cli.render import console, render_audit_line, render_coverage, render_envelope
 from airlock.config import AirlockConfig, load_config
 from airlock.errors import AirlockError, ConfigError, SnapshotUnavailableError
+from airlock.policy.coverage import CoverageReport, DatasetGap
 
 app = typer.Typer(add_completion=False, help="Airlock - the governance gateway for AI agents.")
 policy_app = typer.Typer(help="Validate and inspect policy.")
@@ -116,6 +117,85 @@ def check(
             await gateway.aclose()
 
     _run_async(_run())
+
+
+@app.command()
+def coverage(
+    config: Path = _CONFIG_OPT,
+    as_json: bool = typer.Option(False, "--json", help="Print the report as JSON (for scripts)."),
+    fail_under: float | None = typer.Option(
+        None,
+        "--fail-under",
+        help="Exit non-zero if governed-column coverage is below this percentage.",
+        min=0.0,
+        max=100.0,
+    ),
+    strict: bool = typer.Option(
+        False, "--strict", help="Exit non-zero unless posture is clear (no gaps of any kind)."
+    ),
+) -> None:
+    """Report what this policy can actually enforce, and where the catalog leaves it blind.
+
+    Exits 1 when `--fail-under` or `--strict` is not met, so a pipeline can gate on governance
+    posture the same way it gates on test coverage.
+    """
+    from airlock.policy.compile import compile_snapshot
+    from airlock.policy.coverage import measure_coverage
+
+    cfg = _load(config)
+    try:
+        graph = compile_snapshot(cfg)
+    except SnapshotUnavailableError as exc:
+        err.print(f"[red]{exc}[/]")
+        raise typer.Exit(2) from exc
+
+    report = measure_coverage(graph)
+    if as_json:
+        print(json.dumps(_coverage_payload(report), indent=2))
+    else:
+        render_coverage(report)
+
+    if fail_under is not None and report.governed_pct < fail_under:
+        err.print(
+            f"[red]coverage {report.governed_pct:.1f}% is below --fail-under {fail_under:.1f}%[/]"
+        )
+        raise typer.Exit(1)
+    if strict and not report.is_clear:
+        err.print(f"[red]posture is {report.grade}; --strict requires clear[/]")
+        raise typer.Exit(1)
+
+
+def _coverage_payload(report: CoverageReport) -> dict[str, Any]:
+    return {
+        "snapshot_hash": report.snapshot_hash,
+        "grade": report.grade,
+        "datasets": report.total_datasets,
+        "columns": report.total_columns,
+        "governed_columns": report.governed_columns,
+        "governed_pct": round(report.governed_pct, 2),
+        "classified_columns": report.classified_columns,
+        "classified_pct": round(report.classified_pct, 2),
+        "masked_columns": report.masked_columns,
+        "denied_columns": report.denied_columns,
+        "suspected_gaps": [
+            {
+                "subject": g.subject,
+                "dataset_urn": g.dataset_urn,
+                "column": g.column,
+                "data_type": g.data_type,
+                "reason": g.reason,
+            }
+            for g in report.suspected_gaps
+        ],
+        "dead_rules": list(report.dead_rules),
+        "orphan_deprecated": [_gap_payload(g) for g in report.orphan_deprecated],
+        "unowned_datasets": [_gap_payload(g) for g in report.unowned_datasets],
+        "unreachable_datasets": [_gap_payload(g) for g in report.unreachable_datasets],
+    }
+
+
+def _gap_payload(gap: DatasetGap) -> dict[str, str]:
+    return {"name": gap.name, "urn": gap.urn, "detail": gap.detail}
 
 
 @app.command()

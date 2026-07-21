@@ -14,6 +14,7 @@ from rich.table import Table
 
 from airlock.audit.record import AuditRecord
 from airlock.engine.verdicts import Envelope, EnvelopeStatus
+from airlock.policy.coverage import CoverageReport, DatasetGap
 
 console = Console()
 
@@ -78,6 +79,83 @@ def _render_rows(columns: list[str], rows: list[dict[str, Any]], truncated: bool
     console.print(table)
     suffix = " [red](truncated)[/]" if truncated else ""
     console.print(f"[dim]{len(rows)} row(s) shown{suffix}[/]")
+
+
+_GRADE_STYLE = {"clear": "green", "gaps": "yellow", "at-risk": "red"}
+
+
+def render_coverage(report: CoverageReport) -> None:
+    """Posture first, then only the sections that have something to say.
+
+    Ordered by what a reader must act on: blind spots before statistics. An all-clear catalog
+    prints four lines, so this stays readable as a habit rather than a once-a-quarter audit.
+    """
+    console.print(
+        f"[bold]governance posture[/] [dim]{_short_hash(report.snapshot_hash)} · "
+        f"{report.total_datasets} datasets · {report.total_columns} columns[/]"
+    )
+    style = _GRADE_STYLE.get(report.grade, "white")
+    console.print(
+        f"  [bold {style}]{report.grade}[/]  {_bar(report.governed_pct)} "
+        f"governed {report.governed_columns}/{report.total_columns} ({report.governed_pct:.0f}%)"
+    )
+    console.print(
+        f"  [dim]masked {report.masked_columns} · denied {report.denied_columns} · "
+        f"classified {report.classified_columns}/{report.total_columns} "
+        f"({report.classified_pct:.0f}%)[/]"
+    )
+
+    if report.suspected_gaps:
+        console.print(
+            f"\n[bold red]{len(report.suspected_gaps)} column(s) read as sensitive "
+            "but no rule governs them[/]"
+        )
+        table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+        table.add_column("subject", style="cyan")
+        table.add_column("type", style="dim")
+        table.add_column("looks like")
+        for gap in report.suspected_gaps:
+            table.add_row(gap.subject, gap.data_type, gap.reason)
+        console.print(table)
+        console.print(
+            "[dim]-> classify these in DataHub, then `airlock refresh`. Airlock enforces what the "
+            "catalog states and never guesses, so today these are served in the clear.[/]"
+        )
+
+    _render_gap_section("rules that match nothing in this catalog", report.dead_rules, "yellow")
+    _render_dataset_gaps("deprecated with no certified substitute", report.orphan_deprecated)
+    _render_dataset_gaps("no owner in DataHub", report.unowned_datasets)
+    _render_dataset_gaps("unreachable by every principal", report.unreachable_datasets)
+
+
+def _render_gap_section(title: str, items: tuple[str, ...], style: str) -> None:
+    if not items:
+        return
+    console.print(f"\n[bold {style}]{title}[/]")
+    for item in items:
+        console.print(f"  {item}")
+
+
+def _render_dataset_gaps(title: str, gaps: tuple[DatasetGap, ...]) -> None:
+    if not gaps:
+        return
+    console.print(f"\n[bold yellow]{title}[/]")
+    for gap in gaps:
+        # The detail repeats the heading for single-cause sections; only print what it adds.
+        suffix = f" [dim]{gap.detail}[/]" if gap.detail != title else ""
+        console.print(f"  [cyan]{gap.name}[/]{suffix}")
+
+
+def _bar(pct: float, width: int = 20) -> str:
+    filled = round(width * pct / 100)
+    return f"[green]{'=' * filled}[/][dim]{'-' * (width - filled)}[/]"
+
+
+def _short_hash(content_hash: str) -> str:
+    """Snapshot hashes are 71 chars and would wrap the header. The prefix is enough to correlate
+    a report with an envelope's policy_snapshot at a glance; --json carries the full value."""
+    algo, _, digest = content_hash.partition(":")
+    return f"{algo}:{digest[:12]}" if digest else content_hash
 
 
 def render_audit_line(record: AuditRecord) -> None:
