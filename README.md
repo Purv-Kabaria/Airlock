@@ -500,7 +500,8 @@ tools are built for humans in BI tools: they mask silently or return an error me
 person. An agent handed "permission denied" retries the same query, or hallucinates around the gap.
 Airlock returns a structured envelope — a stable `AIRLOCK-NNN` reason code, the subject, a human
 reason, and at least one actionable hint — so the agent can reformulate on the next call instead of
-guessing. The eval suite tests exactly that loop: deny, then successful reformulation.
+guessing. The test suite pins exactly that loop (`tests/unit/test_reformulation.py`): a refused
+query whose hint is actionable, then the reformulation a reader of that hint would send, executing.
 
 Where those tools are ahead: row-level security, mature policy authoring UIs, many more warehouse
 connectors, and years of production mileage. If you need row-level policy today, use one of them —

@@ -115,11 +115,12 @@ airlock check "SELECT status, COUNT(*) AS n FROM orders GROUP BY status" --as gr
 
 ### 2:10-2:35 — write-back closes the loop
 
-Right pane, open `dim_users`:
+Right pane, open `dim_users`; scroll the structured properties, then click the Stats tab:
 
 > "And it writes back. Structured properties on the dataset — last agent access, the policy
-> snapshot hash that made the decision, a denied-attempts counter — plus a ledger entry. Governance
-> can query what agents did to their data inside DataHub itself, where they already look."
+> snapshot hash that made the decision, a denied-attempts counter — plus a ledger entry. And on the
+> Stats tab, agent query and per-column read counts, written as DataHub's own usage statistics.
+> Governance can query what agents did to their data inside DataHub itself, where they already look."
 
 ### 2:35-2:55 — the honest close
 
@@ -160,6 +161,17 @@ airlock check "SELECT salary FROM payroll" --as growth-agent -c demo/airlock.yam
 airlock check "SELECT * FROM dim_users" --as growth-agent -c demo/airlock.yaml                                     # star expanded against the catalog schema, then masked
 airlock check "DROP TABLE dim_users" --as growth-agent -c demo/airlock.yaml                                        # statement class denied
 ```
+
+### Write-back read back from DataHub
+
+```
+make eval                                    # run real queries through the gateway (writes usage back)
+airlock usage -c demo/airlock.yaml           # read the datasetUsageStatistics Airlock wrote to the Stats tab
+```
+
+`usage` needs executed queries, not dry-runs: `airlock check` decides without executing, so it
+writes no usage. Run `make eval` (or drive `airlock serve` from an MCP client) first, then the
+per-dataset, per-agent, per-column counts show up here and on each dataset's Stats tab in the UI.
 
 ### Failure modes worth rehearsing
 
