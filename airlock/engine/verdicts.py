@@ -62,6 +62,9 @@ class ReasonCode(StrEnum):
     UNKNOWN_PRINCIPAL = "AIRLOCK-430"  # missing/unknown key -> anonymous deny-all principal
     OVERLOADED = "AIRLOCK-440"  # concurrency cap exceeded; retry-after
     WAREHOUSE_UNAVAILABLE = "AIRLOCK-441"  # warehouse unreachable after one retry
+    INTERNAL = (
+        "AIRLOCK-450"  # the gateway itself faulted; not the caller's SQL. Traceback in the log
+    )
 
 
 TITLES: dict[ReasonCode, str] = {
@@ -92,6 +95,7 @@ TITLES: dict[ReasonCode, str] = {
     ReasonCode.UNKNOWN_PRINCIPAL: "unknown principal",
     ReasonCode.OVERLOADED: "gateway at capacity",
     ReasonCode.WAREHOUSE_UNAVAILABLE: "warehouse unavailable",
+    ReasonCode.INTERNAL: "internal gateway error",
 }
 
 # Codes for which a hint is mandatory: any action the reader might want to work around.

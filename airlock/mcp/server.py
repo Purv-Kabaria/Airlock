@@ -129,11 +129,12 @@ def build_mcp(gateway: Gateway, principal_name: str) -> FastMCP:
                 principal=principal_name,
                 original_sql=sql,
                 verdict=Verdict.make(
-                    ReasonCode.PARSE_ERROR,
+                    ReasonCode.INTERNAL,
                     "deny_statement",
                     Subject.statement(),
-                    "The gateway could not process this request.",
-                    hint="Check the SQL is a single valid SELECT and retry.",
+                    "The gateway hit an internal error handling this request; your query was not run.",
+                    hint="This is not a problem with your SQL. Retry; if it persists, the gateway "
+                    "operator should check the logs for this request_id.",
                 ),
                 snapshot=gateway.snapshot_hash(),
             )
