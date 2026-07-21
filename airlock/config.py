@@ -25,6 +25,25 @@ _DURATION = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)?\s*$")
 _DURATION_UNITS = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0, "d": 86400.0}
 
 
+class _Loader(yaml.SafeLoader):
+    """SafeLoader that does not treat off/on/yes/no as booleans (the YAML 1.1 "Norway problem").
+
+    Unquoted `off` would otherwise load as the boolean False, so `substitution: off` and
+    `lineage_propagation: on` - values this config and the README use - would fail validation with a
+    baffling "should be 'off'" message. Restricting bool resolution to true/false keeps them strings;
+    genuine booleans (`datahub_writeback: false`) still parse, and pydantic coerces the rest.
+    """
+
+
+_Loader.yaml_implicit_resolvers = {
+    ch: [(tag, rx) for tag, rx in resolvers if tag != "tag:yaml.org,2002:bool"]
+    for ch, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+_Loader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+    "tag:yaml.org,2002:bool", re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$"), list("tTfF")
+)
+
+
 def parse_duration(value: str | int | float) -> float:
     if isinstance(value, (int, float)):
         return float(value)
@@ -309,7 +328,7 @@ def load_config(path: str | Path) -> AirlockConfig:
     if not p.exists():
         raise ConfigError(f"config file not found: {p}")
     with p.open(encoding="utf-8") as fh:
-        raw = yaml.safe_load(fh) or {}
+        raw = yaml.load(fh, Loader=_Loader) or {}
     resolved = _resolve_env(raw)
     try:
         return AirlockConfig.model_validate(resolved)

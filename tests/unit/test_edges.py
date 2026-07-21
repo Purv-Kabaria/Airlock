@@ -60,6 +60,14 @@ def test_edge_01_unparseable_sql(graph) -> None:
         resolve("SELECT FROM WHERE +", dialect="duckdb", graph=graph, enforcement=graph.enforcement)
 
 
+@pytest.mark.parametrize("sql", ["SELECT", "SELECT FROM dim_users", "WITH x AS (SELECT 1) SELECT"])
+def test_edge_01_projectionless_select_fails_closed(graph, sql) -> None:
+    # sqlglot parses these, but they are not runnable SQL; without this guard the rewriter emits
+    # "SELECT LIMIT 10000" and forwards a broken statement instead of failing closed.
+    with pytest.raises(ParseError):
+        resolve(sql, dialect="duckdb", graph=graph, enforcement=graph.enforcement)
+
+
 # 2 ---------------------------------------------------------------------------------
 def test_edge_02_table_not_in_catalog(graph) -> None:
     with pytest.raises(UnknownTableError):

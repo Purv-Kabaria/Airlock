@@ -19,6 +19,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+import airlock.cli._encoding  # noqa: F401  side effect: UTF-8 stdout/stderr, before any Console
 from airlock.cli.render import (
     console,
     render_audit_line,

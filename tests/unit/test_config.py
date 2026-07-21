@@ -77,6 +77,22 @@ def test_unknown_mask_strategy_is_rejected_at_load(tmp_path, monkeypatch) -> Non
         load_config(_write(tmp_path, bad.format(url="http://gms:8080")))
 
 
+def test_yaml_off_on_are_strings_not_booleans(tmp_path, monkeypatch) -> None:
+    # YAML 1.1 resolves unquoted off/on/no/yes as booleans (the "Norway problem"). The README and
+    # config use `substitution: off` and `lineage_propagation: on`; without the custom loader those
+    # become False/True and fail Literal validation with a baffling "should be 'off'" message.
+    monkeypatch.setenv("DH_TOKEN", "t")
+    monkeypatch.setenv("KEY_A", "k")
+    body = _YAML.format(url="http://gms:8080")
+    body += "enforcement:\n  substitution: off\n  lineage_propagation: on\n"
+    body += "audit:\n  datahub_writeback: no\n  datahub_usage: false\n"
+    cfg = load_config(_write(tmp_path, body))
+    assert cfg.enforcement.substitution == "off"
+    assert cfg.enforcement.lineage_propagation == "on"
+    assert cfg.audit.datahub_writeback is False  # genuine bool still coerces
+    assert cfg.audit.datahub_usage is False
+
+
 def test_duplicate_rule_id_is_rejected(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("DH_TOKEN", "t")
     monkeypatch.setenv("KEY_A", "k")

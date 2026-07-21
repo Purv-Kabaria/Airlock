@@ -127,8 +127,18 @@ def parse_single(sql: str, dialect: str) -> exp.Expression:
 
     stmt = cast(exp.Expression, statements[0])
     _check_limits(stmt)
+    _reject_empty_projection(stmt)
     _strip_comments(stmt)
     return stmt
+
+
+def _reject_empty_projection(stmt: exp.Expression) -> None:
+    """A SELECT that projects nothing ('SELECT', 'SELECT FROM t') is malformed: sqlglot parses it,
+    but it is not runnable SQL and the rewriter would emit 'SELECT LIMIT 10000'. Fail closed at parse
+    rather than forward a broken statement - no valid SQL has a projectionless SELECT."""
+    for node in stmt.walk():
+        if isinstance(node, exp.Select) and not node.expressions:
+            raise ParseError("Query selects no columns.")
 
 
 def _strip_comments(stmt: exp.Expression) -> None:
