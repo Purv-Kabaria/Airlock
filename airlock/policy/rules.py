@@ -136,6 +136,24 @@ def winning_action(candidates: list[Rule]) -> Rule | None:
     )
 
 
+def column_rule(
+    rules: tuple[Rule, ...],
+    *,
+    tags: frozenset[str],
+    terms: frozenset[str],
+    domain: str | None,
+) -> Rule | None:
+    """The rule that wins for one column, or None. The single definition of how a column resolves,
+    shared by the decision engine and the coverage report so a report can never claim a column is
+    governed that enforcement leaves alone.
+
+    Matches on the column's own tags and terms plus the dataset domain — deliberately *not* the
+    dataset's tags, lifecycle, or certification, which are table-scoped and drive substitution and
+    scope, not column masking. Enforcement acts on column classifications; so does this.
+    """
+    return winning_action(matching_rules(rules, tags=tags, terms=terms, domain=domain))
+
+
 def tie_conflicts(candidates: list[Rule]) -> list[tuple[Rule, Rule]]:
     """Pairs of rules that tie on rank and specificity but prescribe different actions.
 

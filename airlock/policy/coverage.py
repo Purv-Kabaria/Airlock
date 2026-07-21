@@ -22,8 +22,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from airlock.policy.graph import ColumnFact, DatasetFacts, PolicyGraph
-from airlock.policy.rules import ActionKind, Rule, matching_rules, winning_action
+from airlock.policy.graph import DatasetFacts, PolicyGraph
+from airlock.policy.rules import ActionKind, Rule, column_rule, matching_rules
 
 # Column-name tokens that imply a sensitive column. Deliberately small and boring: every entry
 # earns its place by being unambiguous in a warehouse column name. Matching is on separator-split
@@ -143,26 +143,34 @@ def measure_coverage(graph: PolicyGraph) -> CoverageReport:
             orphan_deprecated.append(
                 DatasetGap(ds.name, ds.urn, "deprecated with no certified downstream")
             )
-        # Table-level rules (substitution, domain scoping) fire on dataset facts alone.
-        for rule in _match_rules(graph, ds):
+        # Substitution rules act on dataset facts (lifecycle), never on a column, so they are only
+        # credited here. Column-scoped rules are credited in the column loop below, where they act.
+        for rule in _table_rules(graph, ds):
             fired_rules.add(rule.id)
 
         for col in ds.columns:
             total_columns += 1
             if col.tags or col.glossary_terms:
                 classified += 1
-            candidates = _match_rules(graph, ds, col)
-            for rule in candidates:
+            # Exactly the inputs engine.column_outcome uses: the column's own tags and terms plus
+            # the dataset domain. Not the dataset's tags/lifecycle - those do not mask columns, and
+            # counting them here would report protection the engine never applies.
+            for rule in matching_rules(
+                graph.rules, tags=col.tags, terms=col.glossary_terms, domain=ds.domain
+            ):
                 fired_rules.add(rule.id)
-            winner = winning_action([r for r in candidates if _column_scoped(r.action.kind)])
-            if winner is None:
+            winner = column_rule(
+                graph.rules, tags=col.tags, terms=col.glossary_terms, domain=ds.domain
+            )
+            kind = winner.action.kind if winner is not None else None
+            if kind is ActionKind.DENY:
+                denied += 1
+            elif kind is ActionKind.MASK:
+                masked += 1
+            else:
                 suspicion = _suspect(col.name)
                 if suspicion is not None:
                     gaps.append(SuspectedGap(ds.name, ds.urn, col.name, col.data_type, suspicion))
-            elif winner.action.kind is ActionKind.DENY:
-                denied += 1
-            else:
-                masked += 1
 
     return CoverageReport(
         snapshot_hash=graph.content_hash,
@@ -184,26 +192,19 @@ def _sorted_datasets(graph: PolicyGraph) -> list[DatasetFacts]:
     return sorted(graph.datasets.values(), key=lambda d: d.name)
 
 
-def _match_rules(graph: PolicyGraph, ds: DatasetFacts, col: ColumnFact | None = None) -> list[Rule]:
-    """Rules matching a dataset, or a column within it.
-
-    Column classifications inherit the dataset's, matching `engine.decide`: a table tagged PII
-    governs its columns unless a column carries its own, stricter classification.
-    """
-    tags = ds.tags if col is None else col.tags | ds.tags
-    terms = ds.glossary_terms if col is None else col.glossary_terms | ds.glossary_terms
-    return matching_rules(
+def _table_rules(graph: PolicyGraph, ds: DatasetFacts) -> list[Rule]:
+    """Substitution rules that fire on this dataset's facts. Only table-scoped kinds are returned:
+    a mask/deny rule that happens to match a dataset-level tag masks nothing (masking is
+    column-scoped), so crediting it here would call a dead rule live."""
+    matches = matching_rules(
         graph.rules,
-        tags=tags,
-        terms=terms,
+        tags=ds.tags,
+        terms=ds.glossary_terms,
         lifecycle=ds.lifecycle,
         certification=ds.certification,
         domain=ds.domain,
     )
-
-
-def _column_scoped(kind: ActionKind) -> bool:
-    return kind in (ActionKind.MASK, ActionKind.DENY)
+    return [r for r in matches if r.action.kind is ActionKind.SUBSTITUTE_CERTIFIED]
 
 
 def _unreachable(graph: PolicyGraph) -> list[DatasetGap]:

@@ -21,7 +21,7 @@ from airlock.policy.graph import (
     PolicyGraph,
     Principal,
 )
-from airlock.policy.rules import ActionKind, matching_rules, winning_action
+from airlock.policy.rules import ActionKind, column_rule
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,19 +42,18 @@ def column_outcome(
     terms: frozenset[str],
     graph: PolicyGraph,
 ) -> Outcome:
-    """The action for one column, independent of principal. Shared by decide and rewrite."""
-    candidates = matching_rules(graph.rules, tags=tags, terms=terms, domain=dataset.domain)
-    winner = winning_action(candidates)
+    """The action for one column, independent of principal. Shared by decide and rewrite.
+
+    Rule matching is delegated to `policy.rules.column_rule` so the coverage report resolves
+    columns identically; only the mask-strategy choice lives here.
+    """
+    winner = column_rule(graph.rules, tags=tags, terms=terms, domain=dataset.domain)
     if winner is None or winner.action.kind is ActionKind.ALLOW:
         return _ALLOW
     if winner.action.kind is ActionKind.DENY:
         return Outcome("deny", rule_id=winner.id)
-    if winner.action.kind is ActionKind.MASK:
-        strategy = resolve_strategy(
-            winner.action.strategy, column_name=fact_name, data_type=fact_type
-        )
-        return Outcome("mask", strategy=strategy, rule_id=winner.id)
-    return _ALLOW
+    strategy = resolve_strategy(winner.action.strategy, column_name=fact_name, data_type=fact_type)
+    return Outcome("mask", strategy=strategy, rule_id=winner.id)
 
 
 def outcome_for(col: ColumnRef, graph: PolicyGraph) -> Outcome:

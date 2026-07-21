@@ -228,3 +228,50 @@ def test_empty_catalog_does_not_divide_by_zero() -> None:
 
     assert report.governed_pct == 0.0
     assert report.classified_pct == 0.0
+
+
+def test_dataset_level_tag_does_not_count_as_column_governance() -> None:
+    """The engine masks on column classifications, not dataset-level tags. Coverage must report the
+    same, or it claims protection enforcement never applies - the exact false confidence it exists
+    to prevent. A dataset tagged PII with an unclassified column: engine allows, so coverage must
+    count zero governed and flag both the dead rule and the unprotected column."""
+    ds_tagged = DatasetFacts(
+        urn=PLAIN,
+        platform="duckdb",
+        name="plain",
+        env="PROD",
+        columns=(_col("email"),),  # no column-level classification
+        tags=frozenset({"PII"}),  # tag lives on the dataset
+        domain="Marketing",
+        owners=("data-eng",),
+    )
+    graph = PolicyGraph.build(
+        datasets={PLAIN: ds_tagged},
+        lineage={},
+        rules=(MASK_PII,),
+        enforcement=EnforcementSettings(),
+        principals={"a": Principal("a", Scope(domains=frozenset({"Marketing"})))},
+        compiled_at=datetime.now(UTC),
+        source_url="http://localhost:9002",
+    )
+    report = measure_coverage(graph)
+
+    assert report.governed_columns == 0
+    assert report.dead_rules == ("pii",)  # matches only the dataset tag, so it masks nothing
+    assert [g.column for g in report.suspected_gaps] == ["email"]
+
+
+def test_coverage_counts_match_the_engine_on_the_demo_shaped_graph() -> None:
+    """Pins coverage to enforcement: every column coverage calls governed is a column the engine
+    would actually mask or deny. Guards against the two resolvers drifting apart."""
+    from airlock.engine.decide import column_outcome
+
+    graph = build_graph()
+    engine_governed = sum(
+        1
+        for ds in graph.datasets.values()
+        for col in ds.columns
+        if column_outcome(ds, col.name, col.data_type, col.tags, col.glossary_terms, graph).kind
+        in ("mask", "deny")
+    )
+    assert measure_coverage(graph).governed_columns == engine_governed
