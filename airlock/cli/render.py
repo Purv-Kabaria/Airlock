@@ -39,9 +39,10 @@ _ACTION_STYLE = {
 
 def render_envelope(envelope: Envelope) -> None:
     style = _STATUS_STYLE.get(envelope.status, "white")
+    snapshot = _short_hash(envelope.policy_snapshot) if envelope.policy_snapshot else "-"
     console.print(
         f"[bold {style}]{envelope.status.value.upper()}[/] "
-        f"[dim]{envelope.request_id} · {envelope.principal} · {envelope.policy_snapshot or '-'}[/]"
+        f"[dim]{envelope.request_id} · {envelope.principal} · {snapshot}[/]"
     )
 
     if envelope.verdicts:
