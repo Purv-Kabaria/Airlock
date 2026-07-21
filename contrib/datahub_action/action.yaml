@@ -1,0 +1,16 @@
+# DataHub Actions recipe: push snapshot refreshes to Airlock on classification change.
+# Run: datahub actions -c contrib/datahub_action/action.yaml
+name: airlock-refresh
+source:
+  type: kafka
+  config:
+    connection:
+      bootstrap: ${KAFKA_BOOTSTRAP:-localhost:9092}
+      schema_registry_url: ${SCHEMA_REGISTRY_URL:-http://localhost:8081}
+filter:
+  event_type: EntityChangeEvent_v1
+action:
+  type: contrib.datahub_action.airlock_refresh_action:AirlockRefreshAction
+  config:
+    airlock_url: ${AIRLOCK_URL:-http://localhost:8080}
+    token: ${AIRLOCK_TOKEN:-}
