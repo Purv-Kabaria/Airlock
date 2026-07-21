@@ -25,8 +25,11 @@ def configure(*, json_logs: bool = False, level: str = "INFO") -> None:
     logging.basicConfig(format="%(message)s", stream=sys.stderr, level=level.upper())
 
     # Quiet chatty third-party loggers; Airlock surfaces its own clear errors.
-    for noisy in ("httpx", "httpcore", "urllib3", "urllib3.connectionpool"):
+    for noisy in ("httpx", "httpcore", "urllib3"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    # The connection-pool retry chatter ("Retrying (Retry(total=2, ...))") is WARNING-level and not
+    # actionable - Airlock reports its own named DataHub error when the retries are exhausted.
+    logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
     shared: list[Any] = [
         structlog.contextvars.merge_contextvars,

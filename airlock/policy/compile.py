@@ -66,6 +66,25 @@ query ds($urn: String!) {
 """
 
 
+def _datahub_failure(exc: Exception) -> str:
+    """A one-line, actionable reason from a DataHub client exception - never the multi-line urllib3
+    connection-pool dump. The full exception is preserved on the chain (`from exc`) for the log."""
+    text = str(exc).lower()
+    if any(
+        s in text for s in ("refused", "failed to establish", "newconnectionerror", "max retries")
+    ):
+        return (
+            "connection refused. Is DataHub running? Start it with `python demo/up.py`, then retry"
+        )
+    if "timed out" in text or "timeout" in text:
+        return "timed out. DataHub is slow or still booting; wait for it to be healthy, then retry"
+    if "unauthorized" in text or "401" in text:
+        return "authentication rejected. Check datahub.token"
+    if "forbidden" in text or "403" in text:
+        return "access forbidden. Check the datahub.token permissions"
+    return str(exc).splitlines()[0][:200]
+
+
 def ping(config: AirlockConfig, *, timeout: float = 5.0) -> None:
     """Cheap connectivity check for `airlock doctor` and startup. Raises on failure."""
     url = config.datahub.url.rstrip("/") + "/config"
@@ -105,7 +124,8 @@ def compile_snapshot(config: AirlockConfig) -> PolicyGraph:
         raise
     except Exception as exc:
         raise SnapshotUnavailableError(
-            f"Could not compile a policy snapshot from DataHub at {config.datahub.url}: {exc}"
+            f"Could not compile a policy snapshot from DataHub at {config.datahub.url}: "
+            f"{_datahub_failure(exc)}"
         ) from exc
 
     graph = PolicyGraph.build(
