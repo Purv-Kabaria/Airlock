@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from airlock.config import WarehouseConfig
+from airlock.errors import ConfigError
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,4 +46,8 @@ def make_adapter(config: WarehouseConfig, *, pool_size: int = 8) -> WarehouseAda
         from airlock.exec.postgres_adapter import PostgresAdapter
 
         return PostgresAdapter(config.dsn, pool_size=pool_size)
-    raise ValueError(f"no warehouse adapter for kind {config.kind!r}")
+    # Unreachable through config load (the kind is a Literal), but reachable when a WarehouseConfig
+    # is built programmatically. Named error over a bare ValueError so the fix is in the message.
+    raise ConfigError(
+        f"no warehouse adapter for warehouse.kind {config.kind!r}; supported: duckdb, postgres"
+    )

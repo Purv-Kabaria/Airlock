@@ -133,7 +133,7 @@ airlock serve
 
 ### The one-URL-swap promise
 
-If your agent already talks to a Postgres/DuckDB/Snowflake MCP server or connection string, integration is replacing that endpoint with Airlock's. Nothing else changes — Airlock exposes the tool surface the agent already expects (`warehouse_run_query`, `warehouse_list_tables`, `warehouse_describe_table`). It's a drop-in the same way a reverse proxy is a drop-in for a human client.
+If your agent already talks to a Postgres or DuckDB MCP server or connection string, integration is replacing that endpoint with Airlock's. Nothing else changes — Airlock exposes the tool surface the agent already expects (`warehouse_run_query`, `warehouse_list_tables`, `warehouse_describe_table`). It's a drop-in the same way a reverse proxy is a drop-in for a human client.
 
 ### It runs on whatever laptop a judge owns
 
@@ -249,7 +249,7 @@ flowchart LR
     end
     subgraph Sources of truth
         DH[("DataHub<br/>tags · glossary · lineage<br/>lifecycle · domains · schemas")]
-        WH[("Warehouse<br/>DuckDB · Postgres · Snowflake")]
+        WH[("Warehouse<br/>DuckDB · Postgres")]
     end
     A1 -- MCP --> MCP --> PDP
     PDP <--> RW
@@ -316,7 +316,7 @@ airlock/
 │   ├── decide.py   #   pure decision fn: (ResolvedQuery, Principal,
 │   │               #   PolicyGraph) → list[Verdict] — no I/O in this file
 │   └── verdicts.py #   Verdict, ReasonCode, envelope construction
-├── exec/           # warehouse adapters (duckdb, postgres, snowflake) + timeouts
+├── exec/           # warehouse adapters (duckdb, postgres) + pooling, timeouts
 ├── audit/          # JSONL sink, OTel sink, DataHub write-back sink
 ├── masking/        # strategy registry (entry-point extensible)
 └── cli/            # init, serve, check, coverage, tail, explain, policy, doctor
@@ -394,7 +394,7 @@ datahub:
     stale_policy: fail_closed   # fail_closed | serve_stale_readonly
 
 warehouse:
-  kind: duckdb                  # duckdb | postgres | snowflake
+  kind: duckdb                  # duckdb | postgres
   dsn: ${WAREHOUSE_DSN}
   defaults: { row_limit: 10000, statement_timeout: 30s }
 

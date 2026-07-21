@@ -67,7 +67,10 @@ class WarehouseDefaults(_Strict):
 
 
 class WarehouseConfig(_Strict):
-    kind: Literal["duckdb", "postgres", "snowflake"]
+    # Only kinds with a shipped adapter in exec/. Accepting a kind here that make_adapter cannot
+    # build moves the failure from config load to first query, where it is far more expensive to
+    # diagnose. Add a value only in the same change that adds its adapter.
+    kind: Literal["duckdb", "postgres"]
     dsn: str
     defaults: WarehouseDefaults = WarehouseDefaults()
 

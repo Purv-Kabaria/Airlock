@@ -102,3 +102,28 @@ def test_invalid_server_tuning_is_rejected(tmp_path, monkeypatch) -> None:
     bad = _YAML.format(url="http://gms:8080") + "server: { max_concurrency: 0 }\n"  # must be >= 1
     with pytest.raises(ConfigError, match="max_concurrency"):
         load_config(_write(tmp_path, bad))
+
+
+def test_warehouse_kind_without_an_adapter_is_rejected_at_config_load(
+    tmp_path, monkeypatch
+) -> None:
+    """Config must not accept a warehouse kind exec/ cannot build. Accepting one moves the failure
+    from config load to first query, and the README used to advertise a kind that did not exist."""
+    monkeypatch.setenv("DH_TOKEN", "t")
+    monkeypatch.setenv("KEY_A", "k")
+    bad = _YAML.format(url="http://gms:8080").replace("kind: duckdb", "kind: snowflake")
+    with pytest.raises(ConfigError, match="kind"):
+        load_config(_write(tmp_path, bad))
+
+
+def test_every_configurable_warehouse_kind_has_an_adapter() -> None:
+    """Pins the config Literal to what make_adapter can actually construct, so adding a kind
+    without its adapter fails here rather than in front of a user."""
+    from typing import get_args
+
+    from airlock.config import WarehouseConfig
+    from airlock.exec.base import make_adapter
+
+    for kind in get_args(WarehouseConfig.model_fields["kind"].annotation):
+        adapter = make_adapter(WarehouseConfig(kind=kind, dsn=":memory:"))
+        assert adapter.kind == kind
