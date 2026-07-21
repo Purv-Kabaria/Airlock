@@ -1,0 +1,48 @@
+# Demo policy. Checked into Git; secrets are env refs resolved at load (see demo/.env.example).
+datahub:
+  url: ${DATAHUB_GMS_URL}
+  token: ${DATAHUB_GMS_TOKEN}
+  snapshot:
+    refresh_interval: 20s        # short so the live-retag demo lands within one interval
+    max_staleness: 24h
+    stale_policy: fail_closed
+
+warehouse:
+  kind: duckdb
+  dsn: ${WAREHOUSE_DSN}
+  defaults: { row_limit: 10000, statement_timeout: 30s }
+
+enforcement:
+  mode: enforce
+  unknown_tables: deny
+  statement_classes: [select]
+  predicate_policy: deny
+  substitution: rewrite
+
+rules:
+  - id: pii-default
+    match: { tag: PII }
+    action: { mask: auto }               # partial_email / partial_phone / generalize_date / hash
+  - id: pii-hard-deny
+    match: { glossary_term: Classification.SSN }
+    action: deny
+  - id: deprecated-redirect
+    match: { lifecycle: DEPRECATED }
+    action: substitute_certified
+
+principals:
+  - name: growth-agent
+    key: ${AIRLOCK_KEY_GROWTH}
+    scopes: { domains: [Marketing] }
+  - name: finance-agent
+    key: ${AIRLOCK_KEY_FINANCE}
+    scopes: { domains: [Finance] }
+    overrides: { row_limit: 100000 }
+
+masking:
+  salt: ${AIRLOCK_MASK_SALT}     # deployment secret for the equality-preserving hash strategy
+
+audit:
+  jsonl: ./demo/audit/decisions.jsonl
+  datahub_writeback: true
+  otel: { enabled: false }
