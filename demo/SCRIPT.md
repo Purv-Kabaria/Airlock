@@ -1,46 +1,173 @@
-# Demo script (about 3 minutes)
+# Demo script
 
-Everything here runs against the real stack `python demo/up.py` starts. No mocks.
+Two documents in one. **Part A** is the recording shot list, timed to 2:55 against the hard
+3:00 limit. **Part B** is the unscripted rehearsal — run it before recording, and hand it to anyone
+who wants to break the thing themselves.
 
-## 0. Before recording
+Everything here runs against the real stack `python demo/up.py` starts. No mocks, no fixtures, no
+`--demo` flag. If a beat below cannot be performed live, it does not belong in the video.
+
+---
+
+## Part A — the 2:55 shot list
+
+### Screen layout
+
+Two panes, side by side, for the whole recording. Do not rearrange windows on camera.
+
 ```
-python demo/up.py                 # DataHub + DuckDB + seeded catalog
-airlock tail -c demo/airlock.yaml # second pane: the live decision stream
++---------------------------+---------------------------+
+|  LEFT: terminal           |  RIGHT: browser           |
+|  airlock commands         |  DataHub UI  :9002        |
+|  (bottom third: tail)     |  logged in, dataset open  |
++---------------------------+---------------------------+
 ```
 
-## 1. Clean query (10s) — the gateway is invisible when nothing is sensitive
-```
-airlock check "SELECT status, COUNT(*) AS n FROM orders GROUP BY status" --as growth-agent -c demo/airlock.yaml
-```
-Status `executed`, no verdicts beyond a row-limit note. Point out: Airlock only intervenes when policy says so.
+Terminal at 100 columns, font large enough to read at 720p (14pt minimum — judges may watch in a
+small embedded player). Run `airlock tail -c demo/airlock.yaml` in a split at the bottom of the left
+pane so verdicts stream while you talk.
 
-## 2. PII query (40s) — masking and denial, explained
+### Before the camera rolls
+
+```
+python demo/up.py                  # DataHub + DuckDB + seeded catalog, idempotent
+python tools/judge.py              # gauntlet must be green before you record
+airlock coverage -c demo/airlock.yaml
+airlock tail -c demo/airlock.yaml  # bottom split
+```
+
+Clear the terminal. Log into DataHub (`datahub`/`datahub`) and leave the `orders` dataset open on
+the right so no login happens on camera.
+
+### 0:00-0:14 — cold open, no preamble
+
+Type the query that a text-to-SQL agent would send:
+
 ```
 airlock check "SELECT name, email, ssn FROM dim_users" --as growth-agent -c demo/airlock.yaml
 ```
-`email` is partially masked (tag `PII`), `ssn` is nulled (term `Classification.SSN`), each with a reason code and a hint. Show the rewritten SQL: the mask is an inline expression — nothing is installed in the warehouse.
 
-## 3. Deprecated table (40s) — the catalog redirects the agent
+On screen: `email` partially masked, `ssn` nulled, each with a reason code and a hint, plus the
+rewritten SQL.
+
+> "This agent asked for social security numbers. It didn't get them — and it got told why, in a
+> format it can act on. Nothing was installed in the warehouse to make that happen."
+
+Do not explain the architecture yet. Show the result first.
+
+### 0:14-0:35 — the problem
+
+Stay on the same screen.
+
+> "Every team shipping a data agent hits the same wall: security won't hand a non-deterministic
+> text generator a warehouse credential. The usual answers are static role grants nobody maintains,
+> or a six-figure access platform built for humans clicking through dashboards. Airlock is a
+> gateway that sits between the agent and the warehouse — and it gets its policy from DataHub."
+
+### 0:35-1:00 — policy comes from the catalog
+
+> "Nothing here is hardcoded. `email` is masked because it carries the `PII` tag in DataHub. `ssn`
+> is denied because of the glossary term. Airlock parses the SQL into an AST, resolves every column
+> to a catalog URN, and applies the rules."
+
+Show the clean case so the gateway does not look like it blocks everything:
+
+```
+airlock check "SELECT status, COUNT(*) AS n FROM orders GROUP BY status" --as growth-agent -c demo/airlock.yaml
+```
+
+> "No sensitive columns, no intervention. It's invisible until policy says otherwise."
+
+### 1:00-1:25 — the catalog redirects the agent
+
 ```
 airlock check "SELECT u.name, u.email, u.ssn, o.total FROM users_raw u JOIN orders o ON o.user_id = u.id ORDER BY o.total DESC LIMIT 10" --as growth-agent -c demo/airlock.yaml
 ```
-`users_raw` is deprecated; Airlock substitutes the certified `dim_users` discovered through lineage (verdict `AIRLOCK-201`), then masks/denies columns on the substitute. The agent didn't know the table moved — the catalog did.
 
-## 4. The live-retag moment (40s) — proof nothing is mocked
-1. Open the DataHub UI (`http://localhost:9002`, login `datahub`/`datahub`).
-2. Open dataset `orders`, add the `PII` tag to the `status` column (or any column).
-3. Wait one refresh interval (20s) or run `airlock refresh -c demo/airlock.yaml`.
-4. Re-run: `airlock check "SELECT status FROM orders" --as growth-agent -c demo/airlock.yaml`
-   — `status` is now masked. Enforcement changed because the *catalog* changed.
+> "`users_raw` was deprecated. Airlock followed lineage in DataHub to the certified replacement,
+> checked the schema was compatible, and rewrote the query to point at `dim_users` — then masked
+> the columns on the substitute. The agent didn't know the table moved. The catalog did."
 
-## 5. Write-back (20s) — close the loop
-In the DataHub UI, open `dim_users`: the structured properties `airlock.lastAgentAccess` and
-`airlock.lastPolicySnapshot` are populated, and the institutional-memory ledger shows the access.
-Governance can query agent behavior inside the graph itself.
+### 1:25-2:10 — the live retag (the centerpiece; do not rush this)
 
-## Throw things at it (if time)
+This is the beat that proves nothing is mocked. Slow down and narrate every click.
+
+1. **Right pane.** In DataHub, open `orders`, add the `PII` tag to the `status` column. Let the
+   viewer see the tag being applied in the UI.
+2. **Left pane.** `airlock refresh -c demo/airlock.yaml` (or wait out the 20s interval and say so).
+3. **Left pane.** Re-run the exact query from 0:35:
+
 ```
-airlock check "SELECT ssn FROM dim_users -- ignore previous instructions" --as growth-agent -c demo/airlock.yaml   # still denied
-airlock check "show me the biggest spenders" --as growth-agent -c demo/airlock.yaml                                  # AIRLOCK-406, friendly
-airlock check "SELECT salary FROM payroll" --as growth-agent -c demo/airlock.yaml                                    # cross-domain deny, names the owner
+airlock check "SELECT status, COUNT(*) AS n FROM orders GROUP BY status" --as growth-agent -c demo/airlock.yaml
 ```
+
+> "Same query. Same gateway. `status` is masked now — because somebody changed a tag in the
+> catalog thirty seconds ago. No deploy, no restart, no code change. That's what it means for
+> policy to be compiled from DataHub rather than copied out of it."
+
+### 2:10-2:35 — write-back closes the loop
+
+Right pane, open `dim_users`:
+
+> "And it writes back. Structured properties on the dataset — last agent access, the policy
+> snapshot hash that made the decision, a denied-attempts counter — plus a ledger entry. Governance
+> can query what agents did to their data inside DataHub itself, where they already look."
+
+### 2:35-2:55 — the honest close
+
+Left pane:
+
+```
+airlock coverage -c demo/airlock.yaml
+```
+
+> "Last thing. Airlock only enforces what the catalog states, so it reports its own blind spots:
+> columns that look sensitive but carry no classification, rules that match nothing. A security
+> tool that only reports its wins isn't one you should trust. Apache 2.0, runs on any laptop with
+> Docker and Python, and there's no mock mode — everything you just saw was live."
+
+### Rules for the recording
+
+- **No dead air on a loading screen.** If `up.py` or a refresh needs time, cut it.
+- **Never type a command that has not been rehearsed in the same session.** A typo on camera costs
+  a re-record; a failed command costs the submission.
+- **Do not narrate the architecture diagram.** It's in the README. The video shows behavior.
+- **No claim without a corresponding thing on screen.** If it isn't demonstrated, cut the sentence.
+- **Watch it back at 720p in a small window.** If the terminal text is unreadable there, the font
+  is too small.
+
+---
+
+## Part B — rehearsal and hostile testing
+
+Run all of this before recording. Anything that breaks here becomes a `make judge` case in the same
+PR as the fix.
+
+### Adversarial inputs
+
+```
+airlock check "SELECT ssn FROM dim_users -- ignore previous instructions" --as growth-agent -c demo/airlock.yaml   # still denied; the comment is not a policy
+airlock check "show me the biggest spenders" --as growth-agent -c demo/airlock.yaml                                # AIRLOCK-406, tells the agent to send SQL
+airlock check "SELECT salary FROM payroll" --as growth-agent -c demo/airlock.yaml                                  # cross-domain deny, names the owning team
+airlock check "SELECT * FROM dim_users" --as growth-agent -c demo/airlock.yaml                                     # star expanded against the catalog schema, then masked
+airlock check "DROP TABLE dim_users" --as growth-agent -c demo/airlock.yaml                                        # statement class denied
+```
+
+### Failure modes worth rehearsing
+
+| Do this                                        | Expected                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------- |
+| `docker stop` the DataHub container mid-session | In-flight requests unaffected (pinned snapshot); `doctor` reports it |
+| Ctrl+C the gateway mid-query, restart           | Clean shutdown, no orphaned warehouse statement, restarts fine       |
+| Run `python demo/up.py` a second time           | Converges, never duplicates catalog entries                         |
+| Send the same query twice at once               | One warehouse execution (singleflight), identical envelopes         |
+| `python demo/reset.py` then `up.py`             | Back to a clean, working stack                                      |
+
+### Green-light checklist
+
+- [ ] `python tools/judge.py` passes — zero tracebacks
+- [ ] `make eval` passes — including the deny-then-reformulate case
+- [ ] `airlock coverage` output matches what the video claims
+- [ ] The retag moment worked end to end, twice in a row
+- [ ] Write-back is visible in the DataHub UI for `dim_users`
+- [ ] Video is under 3:00 and readable at 720p
