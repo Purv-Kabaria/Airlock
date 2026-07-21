@@ -1,54 +1,70 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="260" viewBox="0 0 1100 260" role="img" aria-label="The four Airlock verdicts: allow, mask, deny, substitute">
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="300" viewBox="0 0 1120 300" role="img" aria-label="The four Airlock verdicts: allow, mask, deny, substitute">
   <defs>
     <style>
-      .t   { font-family: Segoe UI, Helvetica, Arial, sans-serif; }
-      .h   { font-weight: 800; font-size: 22px; }
-      .code{ font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12.5px; }
-      .lbl { font-size: 13px; font-weight: 600; }
-      .sub { font-size: 13px; }
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      .mono { font-family: "SF Mono", "JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, "Roboto Mono", monospace; }
     </style>
   </defs>
-  <rect width="1100" height="260" rx="16" fill="#f6f9fc"/>
-  <text x="34" y="46" class="t h" fill="#14242f">Four verdicts, one query</text>
-  <text x="34" y="72" class="t sub" fill="#5a6b78">Every column, table, and statement gets exactly one decision — and every decision carries a reason code and a hint.</text>
 
-  <!-- allow -->
-  <g transform="translate(34,100)">
-    <rect width="248" height="128" rx="12" fill="#ffffff" stroke="#cfe0d6" stroke-width="1.5"/>
-    <rect width="6" height="128" rx="3" fill="#2e9e6b"/>
-    <text x="24" y="34" class="t lbl" fill="#2e9e6b">ALLOW</text>
-    <text x="24" y="62" class="t sub" fill="#3a4a54">Non-sensitive column.</text>
-    <text x="24" y="82" class="t sub" fill="#3a4a54">Passed through byte-identical.</text>
-    <text x="24" y="110" class="t code" fill="#8a9aa6">o.total  →  o.total</text>
+  <rect width="1120" height="300" rx="16" fill="#0b1926"/>
+  <text x="32" y="44" class="mono" font-size="12" letter-spacing="1.6" fill="#6f8ba3">THE FOUR VERDICTS</text>
+  <text x="32" y="74" class="sans" font-size="15" fill="#b8ccdc">Every column, table, and statement gets exactly one decision — each with a reason code and a hint.</text>
+
+  <!-- ALLOW -->
+  <g transform="translate(32,100)">
+    <rect width="252" height="168" rx="12" fill="#101f2e" stroke="#244258"/>
+    <g transform="translate(24,26)" stroke="#4cc38a" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M0 6 L5 11 L14 0"/>
+    </g>
+    <text x="50" y="34" class="sans" font-size="16" font-weight="700" fill="#4cc38a">Allow</text>
+    <text x="24" y="66" class="mono" font-size="11" fill="#5b7890">passthrough</text>
+    <text x="24" y="94" class="sans" font-size="13" fill="#aebfce">Non-sensitive column,</text>
+    <text x="24" y="112" class="sans" font-size="13" fill="#aebfce">returned byte-identical.</text>
+    <line x1="24" y1="128" x2="228" y2="128" stroke="#1c3a52"/>
+    <text x="24" y="152" class="mono" font-size="12" fill="#7e9cb4">o.total → o.total</text>
   </g>
 
-  <!-- mask -->
-  <g transform="translate(302,100)">
-    <rect width="248" height="128" rx="12" fill="#ffffff" stroke="#ecdcc0" stroke-width="1.5"/>
-    <rect width="6" height="128" rx="3" fill="#d9902b"/>
-    <text x="24" y="34" class="t lbl" fill="#c07d1a">MASK · AIRLOCK-110</text>
-    <text x="24" y="62" class="t sub" fill="#3a4a54">Tagged PII in the catalog.</text>
-    <text x="24" y="82" class="t sub" fill="#3a4a54">Rewritten to a masking expr.</text>
-    <text x="24" y="110" class="t code" fill="#8a9aa6">email  →  mask_email(email)</text>
+  <!-- MASK -->
+  <g transform="translate(300,100)">
+    <rect width="252" height="168" rx="12" fill="#101f2e" stroke="#244258"/>
+    <g transform="translate(24,20)" fill="#e0a94f">
+      <circle cx="1" cy="8" r="2.2"/><circle cx="8" cy="8" r="2.2"/><circle cx="15" cy="8" r="2.2"/>
+    </g>
+    <text x="50" y="34" class="sans" font-size="16" font-weight="700" fill="#e0a94f">Mask</text>
+    <text x="24" y="66" class="mono" font-size="11" fill="#5b7890">AIRLOCK-110</text>
+    <text x="24" y="94" class="sans" font-size="13" fill="#aebfce">Tagged PII. Rewritten to</text>
+    <text x="24" y="112" class="sans" font-size="13" fill="#aebfce">a masking expression.</text>
+    <line x1="24" y1="128" x2="228" y2="128" stroke="#1c3a52"/>
+    <text x="24" y="152" class="mono" font-size="12" fill="#7e9cb4">email → mask_email(…)</text>
   </g>
 
-  <!-- deny -->
-  <g transform="translate(570,100)">
-    <rect width="248" height="128" rx="12" fill="#ffffff" stroke="#eccdd2" stroke-width="1.5"/>
-    <rect width="6" height="128" rx="3" fill="#d1495b"/>
-    <text x="24" y="34" class="t lbl" fill="#c13a4c">DENY · AIRLOCK-120</text>
-    <text x="24" y="62" class="t sub" fill="#3a4a54">Hard-denied classification.</text>
-    <text x="24" y="82" class="t sub" fill="#3a4a54">Column removed; hint offered.</text>
-    <text x="24" y="110" class="t code" fill="#8a9aa6">ssn  →  NULL AS ssn</text>
+  <!-- DENY -->
+  <g transform="translate(568,100)">
+    <rect width="252" height="168" rx="12" fill="#101f2e" stroke="#244258"/>
+    <g transform="translate(24,20)" stroke="#e2687a" stroke-width="2.2" fill="none">
+      <circle cx="8" cy="8" r="8"/>
+      <line x1="2.5" y1="13.5" x2="13.5" y2="2.5"/>
+    </g>
+    <text x="50" y="34" class="sans" font-size="16" font-weight="700" fill="#e2687a">Deny</text>
+    <text x="24" y="66" class="mono" font-size="11" fill="#5b7890">AIRLOCK-120</text>
+    <text x="24" y="94" class="sans" font-size="13" fill="#aebfce">Hard-denied class. Column</text>
+    <text x="24" y="112" class="sans" font-size="13" fill="#aebfce">removed, hint returned.</text>
+    <line x1="24" y1="128" x2="228" y2="128" stroke="#1c3a52"/>
+    <text x="24" y="152" class="mono" font-size="12" fill="#7e9cb4">ssn → NULL AS ssn</text>
   </g>
 
-  <!-- substitute -->
-  <g transform="translate(838,100)">
-    <rect width="228" height="128" rx="12" fill="#ffffff" stroke="#d6d0ee" stroke-width="1.5"/>
-    <rect width="6" height="128" rx="3" fill="#6a5acd"/>
-    <text x="24" y="34" class="t lbl" fill="#5a4abf">SUBSTITUTE · 201</text>
-    <text x="24" y="62" class="t sub" fill="#3a4a54">Deprecated table.</text>
-    <text x="24" y="82" class="t sub" fill="#3a4a54">Redirected via lineage.</text>
-    <text x="24" y="110" class="t code" fill="#8a9aa6">users_raw → dim_users</text>
+  <!-- SUBSTITUTE -->
+  <g transform="translate(836,100)">
+    <rect width="252" height="168" rx="12" fill="#101f2e" stroke="#244258"/>
+    <g transform="translate(23,19)" stroke="#9d8df0" stroke-width="2.1" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1 5 H14 M11 2 L15 5 L11 8"/>
+      <path d="M17 13 H4 M7 10 L3 13 L7 16"/>
+    </g>
+    <text x="50" y="34" class="sans" font-size="16" font-weight="700" fill="#9d8df0">Substitute</text>
+    <text x="24" y="66" class="mono" font-size="11" fill="#5b7890">AIRLOCK-201</text>
+    <text x="24" y="94" class="sans" font-size="13" fill="#aebfce">Deprecated table,</text>
+    <text x="24" y="112" class="sans" font-size="13" fill="#aebfce">redirected via lineage.</text>
+    <line x1="24" y1="128" x2="228" y2="128" stroke="#1c3a52"/>
+    <text x="24" y="152" class="mono" font-size="12" fill="#7e9cb4">users_raw → dim_users</text>
   </g>
 </svg>

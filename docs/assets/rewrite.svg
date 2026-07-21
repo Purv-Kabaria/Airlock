@@ -1,53 +1,71 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="330" viewBox="0 0 1100 330" role="img" aria-label="Before and after: a query the agent sends versus the query Airlock actually runs">
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="366" viewBox="0 0 1120 366" role="img" aria-label="Diff: the query the agent sent versus the query Airlock ran">
   <defs>
     <style>
-      .t    { font-family: Segoe UI, Helvetica, Arial, sans-serif; }
-      .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 13.5px; }
-      .cap  { font-size: 13px; font-weight: 700; letter-spacing: 1px; }
-      .note { font-family: Segoe UI, Helvetica, Arial, sans-serif; font-size: 11.5px; }
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      .mono { font-family: "SF Mono", "JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, "Roboto Mono", monospace; font-size: 13.5px; }
+      .kw   { fill: #6db3e0; }
+      .str  { fill: #d0a15f; }
+      .base { fill: #cddcea; }
+      .dim  { fill: #6f8ba3; }
+      .gut  { fill: #3f5f79; font-size: 12px; }
     </style>
   </defs>
-  <rect width="1100" height="330" rx="16" fill="#0e2233"/>
 
-  <!-- before -->
-  <text x="40" y="46" class="t cap" fill="#7fa8c6">WHAT THE AGENT SENDS</text>
-  <g transform="translate(40,64)">
-    <rect width="470" height="220" rx="12" fill="#12293d" stroke="#274b66" stroke-width="1.5"/>
-    <g class="mono" fill="#d7e6f2">
-      <text x="24" y="40"><tspan fill="#5aa0d6">SELECT</tspan> name, email, ssn,</text>
-      <text x="24" y="66">       o.total</text>
-      <text x="24" y="92"><tspan fill="#5aa0d6">FROM</tspan>   users_raw u</text>
-      <text x="24" y="118"><tspan fill="#5aa0d6">JOIN</tspan>   orders o <tspan fill="#5aa0d6">ON</tspan> o.user_id = u.id</text>
-      <text x="24" y="144"><tspan fill="#5aa0d6">WHERE</tspan>  signup_date &gt; <tspan fill="#c99a5b">'2026-01-01'</tspan></text>
-      <text x="24" y="170"><tspan fill="#5aa0d6">ORDER BY</tspan> o.total <tspan fill="#5aa0d6">DESC</tspan></text>
+  <rect width="1120" height="366" rx="16" fill="#0b1926"/>
+  <text x="32" y="42" class="mono" font-size="12.5" fill="#6f8ba3">warehouse_run_query<tspan fill="#3f5f79">  ·  as growth-agent</tspan></text>
+
+  <!-- LEFT: sent -->
+  <g>
+    <rect x="32" y="60" width="512" height="272" rx="12" fill="#101f2e" stroke="#244258"/>
+    <rect x="32" y="60" width="4" height="272" rx="2" fill="#e2687a"/>
+    <circle cx="58" cy="90" r="4" fill="#e2687a"/>
+    <text x="72" y="94" class="mono" font-size="11.5" letter-spacing="1.2" fill="#8aa6bd">SENT BY AGENT</text>
+    <g>
+      <rect x="420" y="78" width="102" height="24" rx="12" fill="#221722" stroke="#5a2b36"/>
+      <text x="471" y="94" text-anchor="middle" class="mono" font-size="11" fill="#e2687a">3 PII refs</text>
     </g>
-    <g class="note" fill="#8aa6bd">
-      <text x="24" y="200">One warehouse credential. Full table access. PII in the clear.</text>
+    <line x1="32" y1="114" x2="544" y2="114" stroke="#1c3a52"/>
+
+    <g class="mono">
+      <text x="58" y="146"><tspan class="gut">1  </tspan><tspan class="kw">SELECT</tspan><tspan class="base"> name, </tspan><tspan fill="#e0a94f">email</tspan><tspan class="base">, </tspan><tspan fill="#e2687a">ssn</tspan><tspan class="base">,</tspan></text>
+      <text x="58" y="172"><tspan class="gut">2  </tspan><tspan class="base">       o.total</tspan></text>
+      <text x="58" y="198"><tspan class="gut">3  </tspan><tspan class="kw">FROM</tspan><tspan class="base">   </tspan><tspan fill="#9d8df0">users_raw</tspan><tspan class="base"> u</tspan></text>
+      <text x="58" y="224"><tspan class="gut">4  </tspan><tspan class="kw">JOIN</tspan><tspan class="base">   orders o </tspan><tspan class="kw">ON</tspan><tspan class="base"> o.user_id = u.id</tspan></text>
+      <text x="58" y="250"><tspan class="gut">5  </tspan><tspan class="kw">WHERE</tspan><tspan class="base">  signup_date &gt; </tspan><tspan class="str">'2026-01-01'</tspan></text>
+      <text x="58" y="276"><tspan class="gut">6  </tspan><tspan class="kw">ORDER BY</tspan><tspan class="base"> o.total </tspan><tspan class="kw">DESC</tspan></text>
     </g>
+    <text x="58" y="312" class="sans" font-size="12.5" fill="#6f8ba3">One credential. Full table access. PII in the clear.</text>
   </g>
 
   <!-- arrow -->
-  <g transform="translate(530,174)">
-    <circle r="26" fill="#12293d" stroke="#4aa3df" stroke-width="1.5"/>
-    <path d="M-10 0 H10 M4 -7 L12 0 L4 7" stroke="#4aa3df" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(560,196)">
+    <circle r="22" fill="#101f2e" stroke="#2a5473"/>
+    <path d="M-9 0 H9 M3 -7 L11 0 L3 7" fill="none" stroke="#4aa3df" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 
-  <!-- after -->
-  <text x="592" y="46" class="t cap" fill="#7fc7a3">WHAT AIRLOCK RUNS</text>
-  <g transform="translate(592,64)">
-    <rect width="470" height="220" rx="12" fill="#12293d" stroke="#2b5a45" stroke-width="1.5"/>
-    <g class="mono" fill="#d7e6f2">
-      <text x="24" y="40"><tspan fill="#5aa0d6">SELECT</tspan> name,</text>
-      <text x="24" y="66">       <tspan fill="#e0a94f">mask_email(email)</tspan> <tspan fill="#5aa0d6">AS</tspan> email,</text>
-      <text x="24" y="92">       <tspan fill="#e07a86">NULL</tspan> <tspan fill="#5aa0d6">AS</tspan> ssn,</text>
-      <text x="24" y="118">       o.total</text>
-      <text x="24" y="144"><tspan fill="#5aa0d6">FROM</tspan>   <tspan fill="#8fd3ad">dim_users</tspan> u   <tspan fill="#6f8ba1">-- certified</tspan></text>
-      <text x="24" y="170"><tspan fill="#5aa0d6">JOIN</tspan>   orders o <tspan fill="#5aa0d6">ON</tspan> o.user_id = u.id</text>
-      <text x="24" y="196"><tspan fill="#5aa0d6">ORDER BY</tspan> o.total <tspan fill="#5aa0d6">DESC LIMIT</tspan> 10000</text>
+  <!-- RIGHT: run -->
+  <g>
+    <rect x="576" y="60" width="512" height="272" rx="12" fill="#101f2e" stroke="#244258"/>
+    <rect x="576" y="60" width="4" height="272" rx="2" fill="#4cc38a"/>
+    <circle cx="602" cy="90" r="4" fill="#4cc38a"/>
+    <text x="616" y="94" class="mono" font-size="11.5" letter-spacing="1.2" fill="#8aa6bd">EXECUTED BY AIRLOCK</text>
+    <g>
+      <rect x="988" y="78" width="88" height="24" rx="12" fill="#122019" stroke="#2b5a45"/>
+      <text x="1032" y="94" text-anchor="middle" class="mono" font-size="11" fill="#4cc38a">enforced</text>
     </g>
+    <line x1="576" y1="114" x2="1088" y2="114" stroke="#1c3a52"/>
+
+    <g class="mono">
+      <text x="602" y="140"><tspan class="gut">1  </tspan><tspan class="kw">SELECT</tspan><tspan class="base"> name,</tspan></text>
+      <text x="602" y="164"><tspan class="gut">2 </tspan><tspan fill="#4cc38a">+</tspan><tspan class="base"> </tspan><tspan fill="#e0a94f">mask_email</tspan><tspan class="base">(email) </tspan><tspan class="kw">AS</tspan><tspan class="base"> email,</tspan></text>
+      <text x="602" y="188"><tspan class="gut">3 </tspan><tspan fill="#4cc38a">+</tspan><tspan class="base"> </tspan><tspan fill="#e2687a">NULL</tspan><tspan class="base"> </tspan><tspan class="kw">AS</tspan><tspan class="base"> ssn,</tspan></text>
+      <text x="602" y="212"><tspan class="gut">4  </tspan><tspan class="base">       o.total</tspan></text>
+      <text x="602" y="236"><tspan class="gut">5 </tspan><tspan fill="#4cc38a">+</tspan><tspan class="base"> </tspan><tspan class="kw">FROM</tspan><tspan class="base">   </tspan><tspan fill="#8fd3ad">dim_users</tspan><tspan class="base"> u</tspan></text>
+      <text x="602" y="260"><tspan class="gut">6  </tspan><tspan class="kw">JOIN</tspan><tspan class="base">   orders o </tspan><tspan class="kw">ON</tspan><tspan class="base"> o.user_id = u.id</tspan></text>
+      <text x="602" y="284"><tspan class="gut">7 </tspan><tspan fill="#4cc38a">+</tspan><tspan class="base"> </tspan><tspan class="kw">ORDER BY</tspan><tspan class="base"> o.total </tspan><tspan class="kw">DESC LIMIT</tspan><tspan class="base"> 10000</tspan></text>
+    </g>
+    <text x="602" y="316" class="sans" font-size="12.5" fill="#6f8ba3">email masked · ssn denied · deprecated table redirected.</text>
   </g>
 
-  <g class="note" fill="#6f8ba1">
-    <text x="592" y="308">+ a machine-readable verdict for every change, and an audit record written back to DataHub.</text>
-  </g>
+  <text x="560" y="354" text-anchor="middle" class="sans" font-size="12.5" fill="#6f8ba3">+ a machine-readable verdict for every change, written back to DataHub.</text>
 </svg>
