@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="330" viewBox="0 0 1100 330" role="img" aria-label="Before and after: a query the agent sends versus the query Airlock actually runs">
+  <defs>
+    <style>
+      .t    { font-family: Segoe UI, Helvetica, Arial, sans-serif; }
+      .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 13.5px; }
+      .cap  { font-size: 13px; font-weight: 700; letter-spacing: 1px; }
+      .note { font-family: Segoe UI, Helvetica, Arial, sans-serif; font-size: 11.5px; }
+    </style>
+  </defs>
+  <rect width="1100" height="330" rx="16" fill="#0e2233"/>
+
+  <!-- before -->
+  <text x="40" y="46" class="t cap" fill="#7fa8c6">WHAT THE AGENT SENDS</text>
+  <g transform="translate(40,64)">
+    <rect width="470" height="220" rx="12" fill="#12293d" stroke="#274b66" stroke-width="1.5"/>
+    <g class="mono" fill="#d7e6f2">
+      <text x="24" y="40"><tspan fill="#5aa0d6">SELECT</tspan> name, email, ssn,</text>
+      <text x="24" y="66">       o.total</text>
+      <text x="24" y="92"><tspan fill="#5aa0d6">FROM</tspan>   users_raw u</text>
+      <text x="24" y="118"><tspan fill="#5aa0d6">JOIN</tspan>   orders o <tspan fill="#5aa0d6">ON</tspan> o.user_id = u.id</text>
+      <text x="24" y="144"><tspan fill="#5aa0d6">WHERE</tspan>  signup_date &gt; <tspan fill="#c99a5b">'2026-01-01'</tspan></text>
+      <text x="24" y="170"><tspan fill="#5aa0d6">ORDER BY</tspan> o.total <tspan fill="#5aa0d6">DESC</tspan></text>
+    </g>
+    <g class="note" fill="#8aa6bd">
+      <text x="24" y="200">One warehouse credential. Full table access. PII in the clear.</text>
+    </g>
+  </g>
+
+  <!-- arrow -->
+  <g transform="translate(530,174)">
+    <circle r="26" fill="#12293d" stroke="#4aa3df" stroke-width="1.5"/>
+    <path d="M-10 0 H10 M4 -7 L12 0 L4 7" stroke="#4aa3df" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- after -->
+  <text x="592" y="46" class="t cap" fill="#7fc7a3">WHAT AIRLOCK RUNS</text>
+  <g transform="translate(592,64)">
+    <rect width="470" height="220" rx="12" fill="#12293d" stroke="#2b5a45" stroke-width="1.5"/>
+    <g class="mono" fill="#d7e6f2">
+      <text x="24" y="40"><tspan fill="#5aa0d6">SELECT</tspan> name,</text>
+      <text x="24" y="66">       <tspan fill="#e0a94f">mask_email(email)</tspan> <tspan fill="#5aa0d6">AS</tspan> email,</text>
+      <text x="24" y="92">       <tspan fill="#e07a86">NULL</tspan> <tspan fill="#5aa0d6">AS</tspan> ssn,</text>
+      <text x="24" y="118">       o.total</text>
+      <text x="24" y="144"><tspan fill="#5aa0d6">FROM</tspan>   <tspan fill="#8fd3ad">dim_users</tspan> u   <tspan fill="#6f8ba1">-- certified</tspan></text>
+      <text x="24" y="170"><tspan fill="#5aa0d6">JOIN</tspan>   orders o <tspan fill="#5aa0d6">ON</tspan> o.user_id = u.id</text>
+      <text x="24" y="196"><tspan fill="#5aa0d6">ORDER BY</tspan> o.total <tspan fill="#5aa0d6">DESC LIMIT</tspan> 10000</text>
+    </g>
+  </g>
+
+  <g class="note" fill="#6f8ba1">
+    <text x="592" y="308">+ a machine-readable verdict for every change, and an audit record written back to DataHub.</text>
+  </g>
+</svg>

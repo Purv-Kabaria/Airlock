@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="260" viewBox="0 0 1100 260" role="img" aria-label="The four Airlock verdicts: allow, mask, deny, substitute">
+  <defs>
+    <style>
+      .t   { font-family: Segoe UI, Helvetica, Arial, sans-serif; }
+      .h   { font-weight: 800; font-size: 22px; }
+      .code{ font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12.5px; }
+      .lbl { font-size: 13px; font-weight: 600; }
+      .sub { font-size: 13px; }
+    </style>
+  </defs>
+  <rect width="1100" height="260" rx="16" fill="#f6f9fc"/>
+  <text x="34" y="46" class="t h" fill="#14242f">Four verdicts, one query</text>
+  <text x="34" y="72" class="t sub" fill="#5a6b78">Every column, table, and statement gets exactly one decision — and every decision carries a reason code and a hint.</text>
+
+  <!-- allow -->
+  <g transform="translate(34,100)">
+    <rect width="248" height="128" rx="12" fill="#ffffff" stroke="#cfe0d6" stroke-width="1.5"/>
+    <rect width="6" height="128" rx="3" fill="#2e9e6b"/>
+    <text x="24" y="34" class="t lbl" fill="#2e9e6b">ALLOW</text>
+    <text x="24" y="62" class="t sub" fill="#3a4a54">Non-sensitive column.</text>
+    <text x="24" y="82" class="t sub" fill="#3a4a54">Passed through byte-identical.</text>
+    <text x="24" y="110" class="t code" fill="#8a9aa6">o.total  →  o.total</text>
+  </g>
+
+  <!-- mask -->
+  <g transform="translate(302,100)">
+    <rect width="248" height="128" rx="12" fill="#ffffff" stroke="#ecdcc0" stroke-width="1.5"/>
+    <rect width="6" height="128" rx="3" fill="#d9902b"/>
+    <text x="24" y="34" class="t lbl" fill="#c07d1a">MASK · AIRLOCK-110</text>
+    <text x="24" y="62" class="t sub" fill="#3a4a54">Tagged PII in the catalog.</text>
+    <text x="24" y="82" class="t sub" fill="#3a4a54">Rewritten to a masking expr.</text>
+    <text x="24" y="110" class="t code" fill="#8a9aa6">email  →  mask_email(email)</text>
+  </g>
+
+  <!-- deny -->
+  <g transform="translate(570,100)">
+    <rect width="248" height="128" rx="12" fill="#ffffff" stroke="#eccdd2" stroke-width="1.5"/>
+    <rect width="6" height="128" rx="3" fill="#d1495b"/>
+    <text x="24" y="34" class="t lbl" fill="#c13a4c">DENY · AIRLOCK-120</text>
+    <text x="24" y="62" class="t sub" fill="#3a4a54">Hard-denied classification.</text>
+    <text x="24" y="82" class="t sub" fill="#3a4a54">Column removed; hint offered.</text>
+    <text x="24" y="110" class="t code" fill="#8a9aa6">ssn  →  NULL AS ssn</text>
+  </g>
+
+  <!-- substitute -->
+  <g transform="translate(838,100)">
+    <rect width="228" height="128" rx="12" fill="#ffffff" stroke="#d6d0ee" stroke-width="1.5"/>
+    <rect width="6" height="128" rx="3" fill="#6a5acd"/>
+    <text x="24" y="34" class="t lbl" fill="#5a4abf">SUBSTITUTE · 201</text>
+    <text x="24" y="62" class="t sub" fill="#3a4a54">Deprecated table.</text>
+    <text x="24" y="82" class="t sub" fill="#3a4a54">Redirected via lineage.</text>
+    <text x="24" y="110" class="t code" fill="#8a9aa6">users_raw → dim_users</text>
+  </g>
+</svg>

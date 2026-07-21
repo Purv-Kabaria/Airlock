@@ -1,0 +1,23 @@
+{
+  "status": "error",
+  "request_id": "req_example_06",
+  "principal": "growth-agent",
+  "original_sql": "show me the biggest spenders this quarter",
+  "executed_sql": null,
+  "rows": null,
+  "columns": null,
+  "row_count": null,
+  "truncated": false,
+  "verdicts": [
+    {
+      "code": "AIRLOCK-406",
+      "action": "deny_statement",
+      "subject": "statement:query",
+      "reason": "This looks like natural language, not SQL.",
+      "hint": "warehouse_run_query takes a SQL statement, not a question. Call warehouse_list_tables to see what you can query, then send SELECT <columns> FROM <table>.",
+      "catalog_url": null
+    }
+  ],
+  "policy_snapshot": "sha256:59ff77489820396518d47fecb476acc2b3d9f844d3510b63d3cb91ed7ddf6f29",
+  "audit_ref": null
+}

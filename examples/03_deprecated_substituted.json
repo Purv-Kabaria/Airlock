@@ -1,0 +1,75 @@
+{
+  "status": "executed_with_modifications",
+  "request_id": "req_example_03",
+  "principal": "growth-agent",
+  "original_sql": "SELECT u.name, u.email, u.ssn, o.total FROM users_raw u JOIN orders o ON o.user_id = u.id ORDER BY o.total DESC LIMIT 10",
+  "executed_sql": "SELECT \"u\".\"name\" AS \"name\", SUBSTRING(CAST(\"u\".\"email\" AS TEXT), 1, 1) || '***@' || SPLIT_PART(CAST(\"u\".\"email\" AS TEXT), '@', 2) AS \"email\", NULL AS \"ssn\", \"o\".\"total\" AS \"total\" FROM dim_users AS \"u\" JOIN \"orders\" AS \"o\" ON \"o\".\"user_id\" = \"u\".\"id\" ORDER BY \"o\".\"total\" DESC LIMIT 10",
+  "rows": [
+    {
+      "name": "Ada Lovelace",
+      "email": "a***@corp.com",
+      "ssn": null,
+      "total": 420.0
+    },
+    {
+      "name": "Cy Young",
+      "email": "c***@corp.com",
+      "ssn": null,
+      "total": 250.75
+    },
+    {
+      "name": "Ada Lovelace",
+      "email": "a***@corp.com",
+      "ssn": null,
+      "total": 99.0
+    },
+    {
+      "name": "Bo Diddley",
+      "email": "b***@x.io",
+      "ssn": null,
+      "total": 17.5
+    },
+    {
+      "name": "Di Prince",
+      "email": "d***@corp.com",
+      "ssn": null,
+      "total": 8.25
+    }
+  ],
+  "columns": [
+    "name",
+    "email",
+    "ssn",
+    "total"
+  ],
+  "row_count": 5,
+  "truncated": false,
+  "verdicts": [
+    {
+      "code": "AIRLOCK-201",
+      "action": "substitute",
+      "subject": "table:users_raw",
+      "reason": "users_raw is deprecated (lifecycle DEPRECATED); certified equivalent dim_users selected via lineage with all referenced columns present.",
+      "hint": "Point future queries at dim_users to avoid the redirect.",
+      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,users_raw,PROD)"
+    },
+    {
+      "code": "AIRLOCK-110",
+      "action": "mask",
+      "subject": "column:dim_users.email",
+      "reason": "dim_users.email is tagged PII; masked with strategy partial_email.",
+      "hint": "Only the first character and domain survive; equality is not preserved.",
+      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
+    },
+    {
+      "code": "AIRLOCK-120",
+      "action": "deny_column",
+      "subject": "column:dim_users.ssn",
+      "reason": "dim_users.ssn is classified Classification.SSN; it is nulled for every principal.",
+      "hint": "For cardinality, aggregate over a non-sensitive column instead.",
+      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
+    }
+  ],
+  "policy_snapshot": "sha256:59ff77489820396518d47fecb476acc2b3d9f844d3510b63d3cb91ed7ddf6f29",
+  "audit_ref": null
+}

@@ -1,0 +1,39 @@
+{
+  "status": "denied",
+  "request_id": "req_example_05",
+  "principal": "growth-agent",
+  "original_sql": "SELECT name, salary FROM payroll",
+  "executed_sql": null,
+  "rows": null,
+  "columns": null,
+  "row_count": null,
+  "truncated": false,
+  "verdicts": [
+    {
+      "code": "AIRLOCK-301",
+      "action": "scope_deny",
+      "subject": "table:payroll",
+      "reason": "payroll is in domain 'Finance', outside growth-agent's scope.",
+      "hint": "Request access from finance, or query a table within your domain.",
+      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,payroll,PROD)"
+    },
+    {
+      "code": "AIRLOCK-110",
+      "action": "mask",
+      "subject": "column:payroll.salary",
+      "reason": "payroll.salary is tagged PII; masked with strategy hash.",
+      "hint": "Masked values preserve equality: GROUP BY / COUNT(DISTINCT ...) remain correct.",
+      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,payroll,PROD)"
+    },
+    {
+      "code": "AIRLOCK-150",
+      "action": "limit",
+      "subject": "statement:query",
+      "reason": "A row limit of 10000 was applied.",
+      "hint": "Ask for a narrower query or an aggregate if you need the full population.",
+      "catalog_url": null
+    }
+  ],
+  "policy_snapshot": "sha256:59ff77489820396518d47fecb476acc2b3d9f844d3510b63d3cb91ed7ddf6f29",
+  "audit_ref": null
+}

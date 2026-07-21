@@ -1,0 +1,47 @@
+{
+  "status": "executed_with_modifications",
+  "request_id": "req_example_07",
+  "principal": "growth-agent",
+  "original_sql": "WITH ranked AS (SELECT name, email, ROW_NUMBER() OVER (ORDER BY signup_date DESC) AS rn FROM dim_users) SELECT name, email FROM ranked WHERE rn <= 3",
+  "executed_sql": "WITH \"ranked\" AS (SELECT \"dim_users\".\"name\" AS \"name\", SUBSTRING(CAST(\"dim_users\".\"email\" AS TEXT), 1, 1) || '***@' || SPLIT_PART(CAST(\"dim_users\".\"email\" AS TEXT), '@', 2) AS \"email\", ROW_NUMBER() OVER (ORDER BY \"dim_users\".\"signup_date\" DESC) AS \"rn\" FROM \"dim_users\" AS \"dim_users\") SELECT \"ranked\".\"name\" AS \"name\", \"ranked\".\"email\" AS \"email\" FROM \"ranked\" AS \"ranked\" WHERE \"ranked\".\"rn\" <= 3 LIMIT 10000",
+  "rows": [
+    {
+      "name": "Bo Diddley",
+      "email": "b***@x.io"
+    },
+    {
+      "name": "Cy Young",
+      "email": "c***@corp.com"
+    },
+    {
+      "name": "Di Prince",
+      "email": "d***@corp.com"
+    }
+  ],
+  "columns": [
+    "name",
+    "email"
+  ],
+  "row_count": 3,
+  "truncated": false,
+  "verdicts": [
+    {
+      "code": "AIRLOCK-110",
+      "action": "mask",
+      "subject": "column:dim_users.email",
+      "reason": "dim_users.email is tagged PII; masked with strategy partial_email.",
+      "hint": "Only the first character and domain survive; equality is not preserved.",
+      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
+    },
+    {
+      "code": "AIRLOCK-150",
+      "action": "limit",
+      "subject": "statement:query",
+      "reason": "A row limit of 10000 was applied.",
+      "hint": "Ask for a narrower query or an aggregate if you need the full population.",
+      "catalog_url": null
+    }
+  ],
+  "policy_snapshot": "sha256:59ff77489820396518d47fecb476acc2b3d9f844d3510b63d3cb91ed7ddf6f29",
+  "audit_ref": null
+}

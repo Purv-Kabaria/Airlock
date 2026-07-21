@@ -1,0 +1,43 @@
+{
+  "status": "executed",
+  "request_id": "req_example_01",
+  "principal": "growth-agent",
+  "original_sql": "SELECT status, COUNT(*) AS n, ROUND(SUM(total), 2) AS revenue FROM orders GROUP BY status ORDER BY revenue DESC",
+  "executed_sql": "SELECT \"orders\".\"status\" AS \"status\", COUNT(*) AS \"n\", ROUND(SUM(\"orders\".\"total\"), 2) AS \"revenue\" FROM \"orders\" AS \"orders\" GROUP BY \"orders\".\"status\" ORDER BY \"revenue\" DESC LIMIT 10000",
+  "rows": [
+    {
+      "status": "shipped",
+      "n": 3,
+      "revenue": 688.25
+    },
+    {
+      "status": "returned",
+      "n": 1,
+      "revenue": 99.0
+    },
+    {
+      "status": "cancelled",
+      "n": 1,
+      "revenue": 8.25
+    }
+  ],
+  "columns": [
+    "status",
+    "n",
+    "revenue"
+  ],
+  "row_count": 3,
+  "truncated": false,
+  "verdicts": [
+    {
+      "code": "AIRLOCK-150",
+      "action": "limit",
+      "subject": "statement:query",
+      "reason": "A row limit of 10000 was applied.",
+      "hint": "Ask for a narrower query or an aggregate if you need the full population.",
+      "catalog_url": null
+    }
+  ],
+  "policy_snapshot": "sha256:59ff77489820396518d47fecb476acc2b3d9f844d3510b63d3cb91ed7ddf6f29",
+  "audit_ref": null
+}

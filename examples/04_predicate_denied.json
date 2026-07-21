@@ -1,0 +1,31 @@
+{
+  "status": "denied",
+  "request_id": "req_example_04",
+  "principal": "growth-agent",
+  "original_sql": "SELECT name FROM dim_users WHERE email = 'ada@corp.com'",
+  "executed_sql": null,
+  "rows": null,
+  "columns": null,
+  "row_count": null,
+  "truncated": false,
+  "verdicts": [
+    {
+      "code": "AIRLOCK-130",
+      "action": "deny_statement",
+      "subject": "column:dim_users.email",
+      "reason": "dim_users.email is masked; filtering on it would leak row membership.",
+      "hint": "Remove the predicate, or set predicate_policy: transform to compare masked values.",
+      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
+    },
+    {
+      "code": "AIRLOCK-150",
+      "action": "limit",
+      "subject": "statement:query",
+      "reason": "A row limit of 10000 was applied.",
+      "hint": "Ask for a narrower query or an aggregate if you need the full population.",
+      "catalog_url": null
+    }
+  ],
+  "policy_snapshot": "sha256:59ff77489820396518d47fecb476acc2b3d9f844d3510b63d3cb91ed7ddf6f29",
+  "audit_ref": null
+}

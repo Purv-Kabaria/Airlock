@@ -1,0 +1,56 @@
+{
+  "status": "executed_with_modifications",
+  "request_id": "req_example_02",
+  "principal": "growth-agent",
+  "original_sql": "SELECT name, email, phone FROM dim_users LIMIT 5",
+  "executed_sql": "SELECT \"dim_users\".\"name\" AS \"name\", SUBSTRING(CAST(\"dim_users\".\"email\" AS TEXT), 1, 1) || '***@' || SPLIT_PART(CAST(\"dim_users\".\"email\" AS TEXT), '@', 2) AS \"email\", '***-' || RIGHT(CAST(\"dim_users\".\"phone\" AS TEXT), 4) AS \"phone\" FROM \"dim_users\" AS \"dim_users\" LIMIT 5",
+  "rows": [
+    {
+      "name": "Ada Lovelace",
+      "email": "a***@corp.com",
+      "phone": "***-2001"
+    },
+    {
+      "name": "Bo Diddley",
+      "email": "b***@x.io",
+      "phone": "***-2002"
+    },
+    {
+      "name": "Cy Young",
+      "email": "c***@corp.com",
+      "phone": "***-2003"
+    },
+    {
+      "name": "Di Prince",
+      "email": "d***@corp.com",
+      "phone": "***-2004"
+    }
+  ],
+  "columns": [
+    "name",
+    "email",
+    "phone"
+  ],
+  "row_count": 4,
+  "truncated": false,
+  "verdicts": [
+    {
+      "code": "AIRLOCK-110",
+      "action": "mask",
+      "subject": "column:dim_users.email",
+      "reason": "dim_users.email is tagged PII; masked with strategy partial_email.",
+      "hint": "Only the first character and domain survive; equality is not preserved.",
+      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
+    },
+    {
+      "code": "AIRLOCK-110",
+      "action": "mask",
+      "subject": "column:dim_users.phone",
+      "reason": "dim_users.phone is tagged PII; masked with strategy partial_phone.",
+      "hint": "Only the last four digits survive; equality is not preserved.",
+      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
+    }
+  ],
+  "policy_snapshot": "sha256:59ff77489820396518d47fecb476acc2b3d9f844d3510b63d3cb91ed7ddf6f29",
+  "audit_ref": null
+}
