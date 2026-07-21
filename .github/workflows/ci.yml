@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Sync deps
+        run: uv sync --extra dev
+      - name: Lint
+        run: |
+          uv run ruff check airlock tools tests demo
+          uv run ruff format --check airlock tools tests demo
+      - name: Types
+        run: uv run mypy airlock
+      - name: Unit tests
+        run: uv run pytest tests/unit -q
+      - name: Edge-case coverage
+        run: uv run python tools/check_edges.py
+
+  demo-stack:
+    # Boots the real DataHub + DuckDB and runs everything that touches the live stack: the
+    # benchmark, the MCP eval, the hostile-user gauntlet, and the examples capture all compile the
+    # policy snapshot from live DataHub, exactly like production. Heavier; one OS per commit.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+      - name: Sync deps
+        run: uv sync --extra dev
+      - name: Boot demo stack + seed
+        run: uv run python demo/up.py
+      - name: Enforce against the live catalog
+        run: uv run airlock check "SELECT name, email, ssn FROM users_raw" --as growth-agent -c demo/airlock.yaml
+      - name: Benchmark budget (live snapshot)
+        run: uv run python tools/bench.py
+      - name: MCP eval (live snapshot)
+        run: uv run python tools/eval.py
+      - name: Hostile-user gauntlet (live snapshot)
+        run: uv run python tools/judge.py
+      - name: Concurrency load budget (live snapshot)
+        run: uv run python tools/load.py
+      - name: Examples are up to date
+        run: |
+          uv run python tools/gen_examples.py
+          git diff --exit-code examples/
