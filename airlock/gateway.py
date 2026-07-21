@@ -461,6 +461,11 @@ class Gateway:
         finally:
             if self._coalesce.get(key) is inflight:
                 self._coalesce.pop(key, None)
+            # The leader awaits the adapter directly, never its own future - only coalesced followers
+            # await it. With no follower, a failure would leave the exception unretrieved and asyncio
+            # would log it at GC. Retrieve it here; followers still receive it when they await.
+            if inflight.future.done() and not inflight.future.cancelled():
+                inflight.future.exception()
 
     # -- snapshot / refresh ----------------------------------------------------------
 
