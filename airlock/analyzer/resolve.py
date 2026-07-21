@@ -219,14 +219,17 @@ def _decide_substitutions(
             for r in sub_rules
         ):
             continue
-        sub = graph.certified_substitute(ds.urn)
-        if sub is None:
+        candidates = graph.certified_substitutes(ds.urn)
+        if not candidates:
             ref.substitute_note = "no certified downstream equivalent exists in the catalog"
             continue
-        missing = _incompatible_columns(referenced.get(id(ref.node), set()), sub)
-        if missing:
+        referenced_cols = referenced.get(id(ref.node), set())
+        sub, missing = _pick_substitute(candidates, referenced_cols)
+        if sub is None:
+            # Every certified equivalent lacks a referenced column; report the closest one's gap.
+            near, near_missing = missing
             ref.substitute_note = (
-                f"certified equivalent {sub.name} is missing columns {sorted(missing)}"
+                f"certified equivalent {near.name} is missing columns {sorted(near_missing)}"
             )
             continue
         if enforcement.substitution == "rewrite":
@@ -361,6 +364,24 @@ def _referenced_columns_by_table(
 def _incompatible_columns(referenced: set[str], sub: DatasetFacts) -> set[str]:
     have = {c.name.lower() for c in sub.columns}
     return {name for name in referenced if name not in have}
+
+
+def _pick_substitute(
+    candidates: tuple[DatasetFacts, ...], referenced: set[str]
+) -> tuple[DatasetFacts | None, tuple[DatasetFacts, set[str]]]:
+    """Return (chosen equivalent, closest gap).
+
+    The first element is the first certified equivalent whose columns cover every referenced
+    column, or None if none do. The second is always the equivalent missing the fewest referenced
+    columns — used to explain the downgrade when nothing fully fits. Preferring a covering
+    equivalent over lineage order means a stray incompatible certified table never suppresses a
+    substitution that another equivalent would satisfy.
+    """
+    scored = [(cand, _incompatible_columns(referenced, cand)) for cand in candidates]
+    for cand, missing in scored:
+        if not missing:
+            return cand, (cand, missing)
+    return None, min(scored, key=lambda pair: len(pair[1]))
 
 
 def _register_schema(schema: dict[str, Any], table: exp.Table, ds: DatasetFacts) -> None:

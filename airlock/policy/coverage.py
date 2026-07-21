@@ -139,7 +139,7 @@ def measure_coverage(graph: PolicyGraph) -> CoverageReport:
     for ds in _sorted_datasets(graph):
         if not ds.owners:
             unowned.append(DatasetGap(ds.name, ds.urn, "no owner in DataHub"))
-        if ds.is_deprecated and graph.certified_substitute(ds.urn) is None:
+        if ds.is_deprecated and not graph.certified_substitutes(ds.urn):
             orphan_deprecated.append(
                 DatasetGap(ds.name, ds.urn, "deprecated with no certified downstream")
             )

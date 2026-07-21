@@ -195,13 +195,19 @@ class PolicyGraph:
     def principal(self, name: str) -> Principal | None:
         return self.principals.get(name)
 
-    def certified_substitute(self, urn: str) -> DatasetFacts | None:
-        """A certified dataset directly downstream of `urn`, if one exists."""
+    def certified_substitutes(self, urn: str) -> tuple[DatasetFacts, ...]:
+        """Certified, non-deprecated datasets directly downstream of `urn`, in lineage order.
+
+        More than one can qualify. The caller picks the first whose columns cover the query, so a
+        certified equivalent that happens to lack a referenced column never blocks a substitution
+        when another certified equivalent would serve.
+        """
+        out: list[DatasetFacts] = []
         for downstream_urn in self.lineage.downstream_of(urn):
             ds = self.datasets.get(downstream_urn)
             if ds is not None and ds.is_certified and not ds.is_deprecated:
-                return ds
-        return None
+                out.append(ds)
+        return tuple(out)
 
 
 # Sentinel stored in name_index when a bare name maps to more than one dataset.

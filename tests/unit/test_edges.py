@@ -212,6 +212,67 @@ def test_edge_12_substitute_missing_columns_downgrades() -> None:
     assert any(v.code == "AIRLOCK-202" for v in verdicts)
 
 
+def test_substitute_prefers_the_compatible_certified_equivalent() -> None:
+    """Two certified equivalents exist; the first in lineage order lacks a referenced column.
+    Substitution must pick the one that actually covers the query, not downgrade on the first."""
+    src = dataset_urn("duckdb", "old_t")
+    slim = dataset_urn("duckdb", "slim_t")  # certified but missing `legacy`
+    full = dataset_urn("duckdb", "full_t")  # certified and complete
+    old_t = DatasetFacts(
+        urn=src,
+        platform="duckdb",
+        name="old_t",
+        env="PROD",
+        columns=(
+            ColumnFact("id", field_urn(src, "id"), "BIGINT"),
+            ColumnFact("legacy", field_urn(src, "legacy"), "VARCHAR"),
+        ),
+        lifecycle="DEPRECATED",
+        domain="Marketing",
+    )
+    slim_t = DatasetFacts(
+        urn=slim,
+        platform="duckdb",
+        name="slim_t",
+        env="PROD",
+        columns=(ColumnFact("id", field_urn(slim, "id"), "BIGINT"),),
+        certification="CERTIFIED",
+        domain="Marketing",
+    )
+    full_t = DatasetFacts(
+        urn=full,
+        platform="duckdb",
+        name="full_t",
+        env="PROD",
+        columns=(
+            ColumnFact("id", field_urn(full, "id"), "BIGINT"),
+            ColumnFact("legacy", field_urn(full, "legacy"), "VARCHAR"),
+        ),
+        certification="CERTIFIED",
+        domain="Marketing",
+    )
+    graph = PolicyGraph.build(
+        datasets={src: old_t, slim: slim_t, full: full_t},
+        lineage={src: (slim, full)},  # incompatible equivalent listed first
+        rules=(
+            Rule.make(
+                "dep", Match(lifecycle="DEPRECATED"), ActionSpec(ActionKind.SUBSTITUTE_CERTIFIED)
+            ),
+        ),
+        enforcement=EnforcementSettings(),
+        principals={"a": Principal("a")},
+        compiled_at=datetime.now(UTC),
+        source_url="http://x",
+    )
+    resolved, verdicts = _verdicts(graph, "SELECT legacy FROM old_t", principal="a")
+    assert not any(v.code == "AIRLOCK-202" for v in verdicts)  # not downgraded
+    assert any(v.code == "AIRLOCK-201" for v in verdicts)  # substituted
+    subs = resolved.substitutions()
+    assert len(subs) == 1
+    assert subs[0].substitute_to is not None
+    assert subs[0].substitute_to.name == "full_t"
+
+
 # 13 --------------------------------------------------------------------------------
 def test_edge_13_case_and_quoted_identifiers(graph) -> None:
     _, verdicts = _verdicts(graph, "SELECT Email FROM Dim_Users")
