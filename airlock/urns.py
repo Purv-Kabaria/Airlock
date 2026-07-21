@@ -47,6 +47,21 @@ def field_urn(dataset: str, field: str) -> str:
     return f"urn:li:schemaField:({dataset},{field})"
 
 
+_FIELD_PREFIX = "urn:li:schemaField:("
+
+
+def parse_field_urn(urn: str) -> tuple[str, str] | None:
+    """`urn:li:schemaField:(<dataset_urn>,email)` -> `(<dataset_urn>, "email")`, or None.
+
+    The dataset urn itself contains commas and parens, so split on the *last* comma inside the outer
+    parens - the column name never contains one.
+    """
+    if not urn.startswith(_FIELD_PREFIX) or not urn.endswith(")"):
+        return None
+    dataset_urn, sep, column = urn[len(_FIELD_PREFIX) : -1].rpartition(",")
+    return (dataset_urn, column) if sep else None
+
+
 def tag_name(urn_or_name: str) -> str:
     """`urn:li:tag:PII` -> `PII`; a bare name is returned unchanged."""
     return urn_or_name.removeprefix("urn:li:tag:")

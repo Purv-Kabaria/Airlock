@@ -53,11 +53,13 @@ class DescribeResult(BaseModel):
 def _column_info(ds: DatasetFacts, col: ColumnFact, graph: PolicyGraph) -> ColumnInfo:
     """One column's governance outcome, resolved through the same engine that enforces it, so the
     plan the agent reads here matches exactly what a query would trigger."""
-    outcome = column_outcome(ds, col.name, col.data_type, col.tags, col.glossary_terms, graph)
+    outcome = column_outcome(ds, col, graph)
+    inherited = f" (inherited from {outcome.propagated_from})" if outcome.propagated_from else ""
     if outcome.kind == "mask":
-        note = f"masked with {outcome.strategy}"
+        note = f"masked with {outcome.strategy}{inherited}"
     elif outcome.kind == "deny":
-        note = f"denied ({_classification(col)}); returns NULL or blocks the query"
+        origin = outcome.propagated_from or _classification(col)
+        note = f"denied ({origin}); returns NULL or blocks the query"
     else:
         note = None
     return ColumnInfo(name=col.name, type=col.data_type, policy=outcome.kind, note=note)

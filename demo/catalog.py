@@ -19,6 +19,7 @@ class Column:
     type: str
     tags: tuple[str, ...] = ()
     terms: tuple[str, ...] = ()
+    derives_from: tuple[str, ...] = ()  # "upstream_dataset.column" refs -> column-level lineage
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +93,25 @@ DATASETS: tuple[Dataset, ...] = (
             (12, 1, 99.00, "returned", "555-100-2001"),
             (13, 3, 250.75, "shipped", "555-100-2003"),
             (14, 4, 8.25, "cancelled", "555-100-2004"),
+        ),
+    ),
+    Dataset(
+        # A certified analytics table built from dim_users. `contact` is derived from the PII
+        # `email` column but was never tagged - the classic leak. Airlock masks it anyway, by
+        # reading DataHub's column-level lineage. Nobody had to remember to re-tag it.
+        name="user_report",
+        domain="Marketing",
+        certification="CERTIFIED",
+        columns=(
+            Column("user_id", "BIGINT", derives_from=("dim_users.id",)),
+            Column("contact", "VARCHAR", derives_from=("dim_users.email",)),
+            Column("signup_month", "VARCHAR", derives_from=("dim_users.signup_date",)),
+        ),
+        rows=(
+            (1, "ada@corp.com", "2026-01"),
+            (2, "bo@x.io", "2026-02"),
+            (3, "cy@corp.com", "2026-03"),
+            (4, "di@corp.com", "2026-03"),
         ),
     ),
     Dataset(

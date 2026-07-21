@@ -21,7 +21,7 @@ from airlock.policy.graph import (
     PolicyGraph,
     Principal,
 )
-from airlock.policy.rules import ActionKind, column_rule
+from airlock.policy.rules import ActionKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,39 +29,35 @@ class Outcome:
     kind: Literal["allow", "mask", "deny"]
     strategy: str | None = None
     rule_id: str | None = None
+    propagated_from: str | None = None  # "dataset.column" a classification was inherited from
 
 
 _ALLOW = Outcome("allow")
 
 
-def column_outcome(
-    dataset: DatasetFacts,
-    fact_name: str,
-    fact_type: str,
-    tags: frozenset[str],
-    terms: frozenset[str],
-    graph: PolicyGraph,
-) -> Outcome:
-    """The action for one column, independent of principal. Shared by decide and rewrite.
+def column_outcome(dataset: DatasetFacts, fact: ColumnFact, graph: PolicyGraph) -> Outcome:
+    """The action for one column, independent of principal. Shared by decide, rewrite, the describe
+    card, and coverage.
 
-    Rule matching is delegated to `policy.rules.column_rule` so the coverage report resolves
-    columns identically; only the mask-strategy choice lives here.
+    Rule resolution - including inheritance along column-level lineage - is delegated to
+    `PolicyGraph.governing_rule`, so every reader resolves a column identically; only the
+    mask-strategy choice lives here.
     """
-    winner = column_rule(graph.rules, tags=tags, terms=terms, domain=dataset.domain)
-    if winner is None or winner.action.kind is ActionKind.ALLOW:
+    rule, source = graph.governing_rule(dataset, fact)
+    if rule is None or rule.action.kind is ActionKind.ALLOW:
         return _ALLOW
-    if winner.action.kind is ActionKind.DENY:
-        return Outcome("deny", rule_id=winner.id)
-    strategy = resolve_strategy(winner.action.strategy, column_name=fact_name, data_type=fact_type)
-    return Outcome("mask", strategy=strategy, rule_id=winner.id)
+    if rule.action.kind is ActionKind.DENY:
+        return Outcome("deny", rule_id=rule.id, propagated_from=source)
+    strategy = resolve_strategy(
+        rule.action.strategy, column_name=fact.name, data_type=fact.data_type
+    )
+    return Outcome("mask", strategy=strategy, rule_id=rule.id, propagated_from=source)
 
 
 def outcome_for(col: ColumnRef, graph: PolicyGraph) -> Outcome:
     ds = col.table.effective
     assert ds is not None  # a ColumnRef is only built when the effective dataset exists
-    return column_outcome(
-        ds, col.fact.name, col.fact.data_type, col.fact.tags, col.fact.glossary_terms, graph
-    )
+    return column_outcome(ds, col.fact, graph)
 
 
 def effective_row_limit(principal: Principal, enforcement: EnforcementSettings) -> int:
@@ -170,9 +166,7 @@ def _worst_outcome(base: list[tuple[str, ColumnFact]], graph: PolicyGraph) -> Ou
         ds = graph.dataset(urn)
         if ds is None:
             continue
-        outcome = column_outcome(
-            ds, fact.name, fact.data_type, fact.tags, fact.glossary_terms, graph
-        )
+        outcome = column_outcome(ds, fact, graph)
         if _OUTCOME_RANK[outcome.kind] > _OUTCOME_RANK[worst.kind]:
             worst = outcome
     return worst
@@ -284,6 +278,18 @@ def _verdict_for_column(
 
     if outcome.kind == "deny":
         if col.context == Context.PROJECTION and not col.in_aggregate:
+            if outcome.propagated_from:
+                return Verdict.make(
+                    ReasonCode.DENY_LINEAGE,
+                    "deny_column",
+                    subject,
+                    f"{ds.name}.{col.fact.name} carries no classification, but derives from "
+                    f"{outcome.propagated_from} (denied) via column lineage; it is nulled for "
+                    "every principal.",
+                    hint=f"Classify {ds.name}.{col.fact.name} in DataHub to make this explicit, "
+                    "or query a column that is not derived from denied data.",
+                    catalog_url=url,
+                )
             return Verdict.make(
                 ReasonCode.DENY_COLUMN,
                 "deny_column",
@@ -335,6 +341,17 @@ def _verdict_for_column(
             "note",
             subject,
             f"{ds.name}.{col.fact.name} is masked; ordering by it is allowed but not meaningful.",
+            catalog_url=url,
+        )
+    if outcome.propagated_from:
+        return Verdict.make(
+            ReasonCode.MASK_LINEAGE,
+            "mask",
+            subject,
+            f"{ds.name}.{col.fact.name} carries no classification, but derives from "
+            f"{outcome.propagated_from} via column lineage; masked with strategy {outcome.strategy}.",
+            hint=f"Classify {ds.name}.{col.fact.name} in DataHub to make this explicit. "
+            f"{strategy_hint(outcome.strategy or 'hash')}",
             catalog_url=url,
         )
     return Verdict.make(

@@ -51,6 +51,6 @@
       "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
     }
   ],
-  "policy_snapshot": "sha256:5696670aea84e21da6b36ca4901e3e2c7089f5a7fa0c8b45401804625850ba1b",
+  "policy_snapshot": "sha256:f4b5f2678b49942ec930d13d9594645a373bb344718a2a6d1e484a780d064b7a",
   "audit_ref": null
 }

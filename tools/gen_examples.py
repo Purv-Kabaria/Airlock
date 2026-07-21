@@ -46,6 +46,11 @@ CASES = [
         "WITH ranked AS (SELECT name, email, ROW_NUMBER() OVER (ORDER BY signup_date DESC) AS rn "
         "FROM dim_users) SELECT name, email FROM ranked WHERE rn <= 3",
     ),
+    (
+        "08_lineage_inherited_mask",
+        "growth-agent",
+        "SELECT user_id, contact, signup_month FROM user_report",
+    ),
 ]
 
 

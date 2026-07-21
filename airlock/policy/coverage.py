@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from airlock.policy.graph import DatasetFacts, PolicyGraph
-from airlock.policy.rules import ActionKind, Rule, column_rule, matching_rules
+from airlock.policy.rules import ActionKind, Rule, matching_rules
 
 # Column-name tokens that imply a sensitive column. Deliberately small and boring: every entry
 # earns its place by being unambiguous in a warehouse column name. Matching is on separator-split
@@ -159,9 +159,9 @@ def measure_coverage(graph: PolicyGraph) -> CoverageReport:
                 graph.rules, tags=col.tags, terms=col.glossary_terms, domain=ds.domain
             ):
                 fired_rules.add(rule.id)
-            winner = column_rule(
-                graph.rules, tags=col.tags, terms=col.glossary_terms, domain=ds.domain
-            )
+            # governing_rule includes classification inherited along column lineage, so a column
+            # masked only because it derives from PII is counted as governed, not flagged as a gap.
+            winner, _ = graph.governing_rule(ds, col)
             kind = winner.action.kind if winner is not None else None
             if kind is ActionKind.DENY:
                 denied += 1

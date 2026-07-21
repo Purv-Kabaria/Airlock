@@ -1,4 +1,4 @@
-"""10-question MCP eval against the live demo stack. `make eval` / `python tools/eval.py`.
+"""MCP eval against the live demo stack. `make eval` / `python tools/eval.py`.
 
 A mix of clean, maskable, deniable, and substitutable queries with verified expected outcomes, run
 through the real gateway over a snapshot compiled from live DataHub. Doubles as the demo rehearsal:
@@ -64,6 +64,14 @@ CASES = [
         ("AIRLOCK-110",),
     ),
     Case("growth-agent", "show me the biggest spenders", "error", ("AIRLOCK-406",)),
+    # user_report.contact is untagged; the mask comes from DataHub's column-level lineage back to
+    # dim_users.email. If this case regresses, propagation stopped reading the graph.
+    Case(
+        "growth-agent",
+        "SELECT user_id, contact FROM user_report",
+        "executed_with_modifications",
+        ("AIRLOCK-113",),
+    ),
 ]
 
 

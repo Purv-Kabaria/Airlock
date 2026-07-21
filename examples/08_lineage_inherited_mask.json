@@ -1,0 +1,56 @@
+{
+  "status": "executed_with_modifications",
+  "request_id": "req_example_08",
+  "principal": "growth-agent",
+  "original_sql": "SELECT user_id, contact, signup_month FROM user_report",
+  "executed_sql": "SELECT \"user_report\".\"user_id\" AS \"user_id\", MD5('demo-salt' || CAST(\"user_report\".\"contact\" AS TEXT)) AS \"contact\", \"user_report\".\"signup_month\" AS \"signup_month\" FROM \"user_report\" AS \"user_report\" LIMIT 10000",
+  "rows": [
+    {
+      "user_id": 1,
+      "contact": "dedc45025b79f434a5519d96d9a0ddef",
+      "signup_month": "2026-01"
+    },
+    {
+      "user_id": 2,
+      "contact": "7eb1dc783f398cc3502c1abeb25a9097",
+      "signup_month": "2026-02"
+    },
+    {
+      "user_id": 3,
+      "contact": "f7108e8802cdead4b602d67718e280e9",
+      "signup_month": "2026-03"
+    },
+    {
+      "user_id": 4,
+      "contact": "d7f400318478fd987bd51b5e199b7624",
+      "signup_month": "2026-03"
+    }
+  ],
+  "columns": [
+    "user_id",
+    "contact",
+    "signup_month"
+  ],
+  "row_count": 4,
+  "truncated": false,
+  "verdicts": [
+    {
+      "code": "AIRLOCK-113",
+      "action": "mask",
+      "subject": "column:user_report.contact",
+      "reason": "user_report.contact carries no classification, but derives from dim_users.email via column lineage; masked with strategy hash.",
+      "hint": "Classify user_report.contact in DataHub to make this explicit. Masked values preserve equality: GROUP BY / COUNT(DISTINCT ...) remain correct.",
+      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,user_report,PROD)"
+    },
+    {
+      "code": "AIRLOCK-150",
+      "action": "limit",
+      "subject": "statement:query",
+      "reason": "A row limit of 10000 was applied.",
+      "hint": "Ask for a narrower query or an aggregate if you need the full population.",
+      "catalog_url": null
+    }
+  ],
+  "policy_snapshot": "sha256:f4b5f2678b49942ec930d13d9594645a373bb344718a2a6d1e484a780d064b7a",
+  "audit_ref": null
+}

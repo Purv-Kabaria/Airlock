@@ -39,3 +39,9 @@ show me the biggest spenders this quarter;
 WITH ranked AS (SELECT name, email, ROW_NUMBER() OVER (ORDER BY signup_date DESC) AS rn FROM dim_users) SELECT name, email FROM ranked WHERE rn <= 3;
 -- after:
 WITH "ranked" AS (SELECT "dim_users"."name" AS "name", SUBSTRING(CAST("dim_users"."email" AS TEXT), 1, 1) || '***@' || SPLIT_PART(CAST("dim_users"."email" AS TEXT), '@', 2) AS "email", ROW_NUMBER() OVER (ORDER BY "dim_users"."signup_date" DESC) AS "rn" FROM "dim_users" AS "dim_users") SELECT "ranked"."name" AS "name", "ranked"."email" AS "email" FROM "ranked" AS "ranked" WHERE "ranked"."rn" <= 3 LIMIT 10000;
+
+-- 08_lineage_inherited_mask
+-- before:
+SELECT user_id, contact, signup_month FROM user_report;
+-- after:
+SELECT "user_report"."user_id" AS "user_id", MD5('demo-salt' || CAST("user_report"."contact" AS TEXT)) AS "contact", "user_report"."signup_month" AS "signup_month" FROM "user_report" AS "user_report" LIMIT 10000;

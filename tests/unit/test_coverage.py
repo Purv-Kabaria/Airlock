@@ -271,7 +271,6 @@ def test_coverage_counts_match_the_engine_on_the_demo_shaped_graph() -> None:
         1
         for ds in graph.datasets.values()
         for col in ds.columns
-        if column_outcome(ds, col.name, col.data_type, col.tags, col.glossary_terms, graph).kind
-        in ("mask", "deny")
+        if column_outcome(ds, col, graph).kind in ("mask", "deny")
     )
     assert measure_coverage(graph).governed_columns == engine_governed

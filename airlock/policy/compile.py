@@ -89,6 +89,7 @@ def compile_snapshot(config: AirlockConfig) -> PolicyGraph:
             if facts is not None:
                 datasets[urn] = facts
         lineage = _fetch_lineage(client, list(datasets.keys()))
+        column_lineage = _fetch_column_lineage(client, list(datasets.keys()))
     except SnapshotUnavailableError:
         raise
     except Exception as exc:
@@ -99,6 +100,7 @@ def compile_snapshot(config: AirlockConfig) -> PolicyGraph:
     graph = PolicyGraph.build(
         datasets=datasets,
         lineage=lineage,
+        column_lineage=column_lineage,
         rules=config.compiled_rules(),
         enforcement=config.enforcement_settings(),
         principals=config.compiled_principals(),
@@ -180,6 +182,26 @@ def _fetch_lineage(client: Any, urns: list[str]) -> dict[str, tuple[str, ...]]:
         except Exception as exc:
             log.warning("lineage.fetch_failed", urn=urn, detail=str(exc))
     return {k: tuple(v) for k, v in downstream.items()}
+
+
+def _fetch_column_lineage(client: Any, urns: list[str]) -> dict[str, tuple[str, ...]]:
+    """Fine-grained (column-level) upstream edges: a downstream schemaField URN mapped to the field
+    URNs it derives from, read from each dataset's UpstreamLineage aspect. This is what lets Airlock
+    inherit a classification onto a derived column the catalog never tagged. Best-effort: a lineage
+    read failing degrades propagation for that dataset, it does not fail the snapshot."""
+    from datahub.metadata.schema_classes import UpstreamLineageClass
+
+    edges: dict[str, list[str]] = {}
+    for urn in urns:
+        try:
+            aspect = client.get_aspect(entity_urn=urn, aspect_type=UpstreamLineageClass)
+        except Exception as exc:
+            log.warning("column_lineage.fetch_failed", urn=urn, detail=str(exc))
+            continue
+        for fine in (aspect.fineGrainedLineages if aspect else None) or []:
+            for downstream in fine.downstreams or []:
+                edges.setdefault(downstream, []).extend(fine.upstreams or [])
+    return {downstream: tuple(ups) for downstream, ups in edges.items()}
 
 
 def _columns(ds: dict[str, Any]) -> tuple[ColumnFact, ...]:

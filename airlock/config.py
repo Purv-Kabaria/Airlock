@@ -81,6 +81,7 @@ class EnforcementConfig(_Strict):
     statement_classes: list[str] = ["select"]
     predicate_policy: Literal["deny", "transform"] = "deny"
     substitution: Literal["rewrite", "warn", "off"] = "rewrite"
+    lineage_propagation: Literal["on", "off"] = "on"
     table_matching: Literal["exact", "suffix"] = "exact"
 
     def compile(self, defaults: WarehouseDefaults) -> EnforcementSettings:
@@ -90,6 +91,7 @@ class EnforcementConfig(_Strict):
             statement_classes=frozenset(s.lower() for s in self.statement_classes),
             predicate_policy=self.predicate_policy,
             substitution=self.substitution,
+            lineage_propagation=self.lineage_propagation,
             table_matching=self.table_matching,
             default_row_limit=defaults.row_limit,
             default_statement_timeout=defaults.statement_timeout,

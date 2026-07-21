@@ -29,6 +29,9 @@ from datahub.metadata.schema_classes import (
     DeprecationClass,
     DomainPropertiesClass,
     DomainsClass,
+    FineGrainedLineageClass,
+    FineGrainedLineageDownstreamTypeClass,
+    FineGrainedLineageUpstreamTypeClass,
     GlobalTagsClass,
     GlossaryTermAssociationClass,
     GlossaryTermInfoClass,
@@ -110,22 +113,50 @@ def _dataset_mcps(ds: Dataset) -> list[MetadataChangeProposalWrapper]:
     return [MetadataChangeProposalWrapper(entityUrn=urn, aspect=a) for a in aspects]
 
 
+def _field_urn(dataset_urn: str, column: str) -> str:
+    return f"urn:li:schemaField:({dataset_urn},{column})"
+
+
 def _lineage_mcps() -> list[MetadataChangeProposalWrapper]:
-    mcps: list[MetadataChangeProposalWrapper] = []
+    """One UpstreamLineage aspect per downstream dataset, merging table-level edges (declared as
+    `downstream` on the upstream) with column-level edges (declared as `derives_from` on each
+    downstream column). Column lineage is what lets Airlock inherit a classification onto a derived
+    column the catalog never tagged."""
+    table_upstreams: dict[str, set[str]] = {}
+    fine: dict[str, list[FineGrainedLineageClass]] = {}
     for ds in DATASETS:
+        down_urn = make_dataset_urn(platform=PLATFORM, name=ds.name, env="PROD")
         for downstream in ds.downstream:
             up_urn = make_dataset_urn(platform=PLATFORM, name=ds.name, env="PROD")
-            down_urn = make_dataset_urn(platform=PLATFORM, name=downstream, env="PROD")
-            mcps.append(
-                MetadataChangeProposalWrapper(
-                    entityUrn=down_urn,
-                    aspect=UpstreamLineageClass(
-                        upstreams=[
-                            UpstreamClass(dataset=up_urn, type=DatasetLineageTypeClass.TRANSFORMED)
-                        ]
-                    ),
+            d_urn = make_dataset_urn(platform=PLATFORM, name=downstream, env="PROD")
+            table_upstreams.setdefault(d_urn, set()).add(up_urn)
+        for col in ds.columns:
+            for ref in col.derives_from:
+                up_name, up_col = ref.split(".")
+                up_urn = make_dataset_urn(platform=PLATFORM, name=up_name, env="PROD")
+                table_upstreams.setdefault(down_urn, set()).add(up_urn)
+                fine.setdefault(down_urn, []).append(
+                    FineGrainedLineageClass(
+                        upstreamType=FineGrainedLineageUpstreamTypeClass.FIELD_SET,
+                        downstreamType=FineGrainedLineageDownstreamTypeClass.FIELD,
+                        upstreams=[_field_urn(up_urn, up_col)],
+                        downstreams=[_field_urn(down_urn, col.name)],
+                    )
                 )
+    mcps: list[MetadataChangeProposalWrapper] = []
+    for entity_urn in sorted(set(table_upstreams) | set(fine)):
+        mcps.append(
+            MetadataChangeProposalWrapper(
+                entityUrn=entity_urn,
+                aspect=UpstreamLineageClass(
+                    upstreams=[
+                        UpstreamClass(dataset=u, type=DatasetLineageTypeClass.TRANSFORMED)
+                        for u in sorted(table_upstreams.get(entity_urn, set()))
+                    ],
+                    fineGrainedLineages=fine.get(entity_urn) or None,
+                ),
             )
+        )
     return mcps
 
 

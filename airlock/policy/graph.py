@@ -14,12 +14,12 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
 
-from airlock.policy.rules import Rule
-from airlock.urns import normalize_table_key
+from airlock.policy.rules import ActionKind, Rule, column_rule
+from airlock.urns import normalize_table_key, parse_field_urn
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +99,7 @@ class EnforcementSettings:
     statement_classes: frozenset[str] = frozenset({"select"})
     predicate_policy: str = "deny"  # deny | transform
     substitution: str = "rewrite"  # rewrite | warn | off
+    lineage_propagation: str = "on"  # on | off: inherit classification along column lineage
     table_matching: str = "exact"  # exact | suffix
     default_row_limit: int = 10000
     default_statement_timeout: float = 30.0
@@ -110,12 +111,20 @@ class EnforcementSettings:
 
 @dataclass(frozen=True, slots=True)
 class Lineage:
-    """Downstream edges keyed by upstream URN, used to find certified substitutes."""
+    """Dataset downstream edges (for substitution) and column upstream edges (for classification
+    propagation). `column_upstreams` maps a downstream schemaField URN to the field URNs it derives
+    from, read from DataHub's fine-grained lineage."""
 
     downstream: Mapping[str, tuple[str, ...]]
+    column_upstreams: Mapping[str, tuple[str, ...]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
     def downstream_of(self, urn: str) -> tuple[str, ...]:
         return self.downstream.get(urn, ())
+
+    def upstream_columns(self, field_urn: str) -> tuple[str, ...]:
+        return self.column_upstreams.get(field_urn, ())
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +150,7 @@ class PolicyGraph:
         principals: dict[str, Principal],
         compiled_at: datetime,
         source_url: str,
+        column_lineage: dict[str, tuple[str, ...]] | None = None,
     ) -> PolicyGraph:
         # Index every suffix of each dataset name (full, then progressively shorter), so both an
         # over-qualified query (catalog.schema.t) and a bare one (t) can resolve. A suffix shared by
@@ -155,11 +165,15 @@ class PolicyGraph:
                 elif name_index[key] != urn:
                     name_index[key] = _AMBIGUOUS
 
-        content_hash = _hash_graph(datasets, rules, enforcement, principals)
+        col_lineage = column_lineage or {}
+        content_hash = _hash_graph(datasets, rules, enforcement, principals, lineage, col_lineage)
         return cls(
             datasets=MappingProxyType(dict(datasets)),
             name_index=MappingProxyType(name_index),
-            lineage=Lineage(downstream=MappingProxyType(dict(lineage))),
+            lineage=Lineage(
+                downstream=MappingProxyType(dict(lineage)),
+                column_upstreams=MappingProxyType(dict(col_lineage)),
+            ),
             rules=rules,
             enforcement=enforcement,
             principals=MappingProxyType(dict(principals)),
@@ -209,9 +223,70 @@ class PolicyGraph:
                 out.append(ds)
         return tuple(out)
 
+    def column_by_field_urn(self, field_urn: str) -> tuple[DatasetFacts, ColumnFact] | None:
+        parsed = parse_field_urn(field_urn)
+        if parsed is None:
+            return None
+        dataset_urn, column = parsed
+        ds = self.datasets.get(dataset_urn)
+        if ds is None:
+            return None
+        fact = ds.column(column)
+        return (ds, fact) if fact is not None else None
+
+    def governing_rule(
+        self, dataset: DatasetFacts, fact: ColumnFact
+    ) -> tuple[Rule | None, str | None]:
+        """The rule that governs a column - directly, or inherited from the strictest upstream
+        column it derives from via DataHub's column-level lineage. Returns (rule, source), where
+        source is the `dataset.column` a classification propagated from, or None when the column is
+        directly classified. Shared by the decision engine and the coverage report, so a column
+        masked by lineage is never reported as an unclassified gap that enforcement would in fact
+        protect - and a report can never drift from what the gateway does."""
+        direct = column_rule(
+            self.rules, tags=fact.tags, terms=fact.glossary_terms, domain=dataset.domain
+        )
+        if _governs(direct) or self.enforcement.lineage_propagation == "off":
+            return direct, None
+        inherited, source = self._inherited_rule(fact.urn, set())
+        return (inherited, source) if _governs(inherited) else (direct, None)
+
+    def _inherited_rule(self, field_urn: str, seen: set[str]) -> tuple[Rule | None, str | None]:
+        best: Rule | None = None
+        best_source: str | None = None
+        for up_urn in self.lineage.upstream_columns(field_urn):
+            if up_urn in seen:
+                continue
+            seen.add(up_urn)
+            resolved = self.column_by_field_urn(up_urn)
+            if resolved is None:
+                continue
+            up_ds, up_fact = resolved
+            rule: Rule | None = column_rule(
+                self.rules, tags=up_fact.tags, terms=up_fact.glossary_terms, domain=up_ds.domain
+            )
+            source: str | None = f"{up_ds.name}.{up_fact.name}"
+            if not _governs(rule):
+                # The upstream is itself derived and unclassified; follow the chain further up.
+                rule, source = self._inherited_rule(up_urn, seen)
+            if rule is not None and _governs(rule) and (best is None or _stricter(rule, best)):
+                best, best_source = rule, source
+        return best, best_source
+
 
 # Sentinel stored in name_index when a bare name maps to more than one dataset.
 _AMBIGUOUS = "urn:li:airlock:ambiguous"
+
+_KIND_RANK = {ActionKind.MASK: 1, ActionKind.DENY: 2}
+
+
+def _governs(rule: Rule | None) -> bool:
+    return rule is not None and rule.action.kind is not ActionKind.ALLOW
+
+
+def _stricter(a: Rule, b: Rule) -> bool:
+    """deny outranks mask when picking the strictest inherited classification."""
+    return _KIND_RANK.get(a.action.kind, 0) > _KIND_RANK.get(b.action.kind, 0)
 
 
 def _hash_graph(
@@ -219,6 +294,8 @@ def _hash_graph(
     rules: tuple[Rule, ...],
     enforcement: EnforcementSettings,
     principals: dict[str, Principal],
+    lineage: dict[str, tuple[str, ...]],
+    column_lineage: dict[str, tuple[str, ...]],
 ) -> str:
     payload = {
         "datasets": [
@@ -280,6 +357,11 @@ def _hash_graph(
             }
             for p in sorted(principals.values(), key=lambda x: x.name)
         ],
+        # Lineage drives substitution and classification propagation, so a change to it changes
+        # decisions - it must change the snapshot hash, or a cache keyed on the hash would serve a
+        # decision the current graph would no longer make.
+        "lineage": {k: sorted(v) for k, v in sorted(lineage.items())},
+        "column_lineage": {k: sorted(v) for k, v in sorted(column_lineage.items())},
     }
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "sha256:" + hashlib.sha256(blob).hexdigest()

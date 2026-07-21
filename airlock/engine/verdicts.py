@@ -20,8 +20,14 @@ class ReasonCode(StrEnum):
     MASK = "AIRLOCK-110"  # column masked because it carries a mask-classified tag/term
     MASK_ORDER_NOTE = "AIRLOCK-111"  # masked column used in ORDER BY: allowed, but meaningless
     UNION_STRICTEST = "AIRLOCK-112"  # union column adopts the strictest branch classification
+    MASK_LINEAGE = (
+        "AIRLOCK-113"  # untagged column masked: derives from a masked column (col lineage)
+    )
     DENY_COLUMN = "AIRLOCK-120"  # column hard-denied for every principal (e.g. PII.SSN)
     DENY_AGGREGATE = "AIRLOCK-121"  # aggregate over a denied column (COUNT(ssn)) is itself denied
+    DENY_LINEAGE = (
+        "AIRLOCK-122"  # untagged column denied: derives from a denied column (col lineage)
+    )
     PREDICATE_GUARD = (
         "AIRLOCK-130"  # masked column in WHERE/JOIN/HAVING: membership-inference guard
     )
@@ -62,8 +68,10 @@ TITLES: dict[ReasonCode, str] = {
     ReasonCode.MASK: "column masked",
     ReasonCode.MASK_ORDER_NOTE: "ordering on a masked column is not meaningful",
     ReasonCode.UNION_STRICTEST: "union column takes the strictest classification",
+    ReasonCode.MASK_LINEAGE: "column masked by inherited classification",
     ReasonCode.DENY_COLUMN: "column denied",
     ReasonCode.DENY_AGGREGATE: "aggregate over a denied column",
+    ReasonCode.DENY_LINEAGE: "column denied by inherited classification",
     ReasonCode.PREDICATE_GUARD: "masked column used in a predicate",
     ReasonCode.ROW_LIMIT: "row limit applied",
     ReasonCode.MONITOR: "monitor mode: not enforced",
@@ -89,7 +97,9 @@ TITLES: dict[ReasonCode, str] = {
 # Codes for which a hint is mandatory: any action the reader might want to work around.
 _HINT_REQUIRED = {
     ReasonCode.MASK,
+    ReasonCode.MASK_LINEAGE,
     ReasonCode.DENY_COLUMN,
+    ReasonCode.DENY_LINEAGE,
     ReasonCode.DENY_AGGREGATE,
     ReasonCode.PREDICATE_GUARD,
     ReasonCode.SUBSTITUTE_DOWNGRADE,
