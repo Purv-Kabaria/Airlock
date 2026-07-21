@@ -32,13 +32,33 @@ async def test_list_tables_is_scope_filtered(tmp_path) -> None:
     assert "dim_users" in content["tables"]
 
 
-async def test_describe_in_scope_table(tmp_path) -> None:
+async def test_describe_reports_per_column_policy(tmp_path) -> None:
     gateway, mcp = _build(tmp_path)
     content = await _content(await mcp.call_tool("warehouse_describe_table", {"name": "dim_users"}))
     await gateway.aclose()
     assert content["in_scope"] is True
-    sensitive = {c["name"] for c in content["columns"] if c["sensitive"]}
-    assert {"email", "ssn"} <= sensitive
+    policy = {c["name"]: c["policy"] for c in content["columns"]}
+    # The card must match what a query actually triggers: email masked, ssn denied, name allowed.
+    assert policy["email"] == "mask"
+    assert policy["ssn"] == "deny"
+    assert policy["name"] == "allow"
+    email = next(c for c in content["columns"] if c["name"] == "email")
+    assert email["note"] and "mask" in email["note"]
+    assert content["note"] and "masked" in content["note"]
+
+
+async def test_describe_card_matches_enforcement(tmp_path) -> None:
+    """The plan the agent reads must equal what running the query would do - same engine, so a
+    column the card calls mask/deny is one the gateway actually masks or denies."""
+    gateway, mcp = _build(tmp_path)
+    card = await _content(await mcp.call_tool("warehouse_describe_table", {"name": "dim_users"}))
+    env = await gateway.run_query("SELECT name, email, ssn FROM dim_users", "growth-agent")
+    await gateway.aclose()
+    row = env.rows[0]
+    policy = {c["name"]: c["policy"] for c in card["columns"]}
+    assert policy["ssn"] == "deny" and row["ssn"] is None
+    assert policy["email"] == "mask" and row["email"] != "ada@corp.com"
+    assert policy["name"] == "allow" and row["name"] == "Ada"
 
 
 async def test_describe_out_of_scope_and_unknown_are_indistinguishable(tmp_path) -> None:

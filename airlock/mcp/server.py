@@ -10,18 +10,20 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel
 
 from airlock.config import AirlockConfig
+from airlock.engine.decide import column_outcome
 from airlock.engine.verdicts import Envelope, ReasonCode, Subject, Verdict
 from airlock.errors import AirlockError
 from airlock.gateway import Gateway, new_request_id
 from airlock.logging import get_logger
 from airlock.mcp.health import start_health_server
-from airlock.policy.graph import Principal
+from airlock.policy.graph import ColumnFact, DatasetFacts, PolicyGraph, Principal
 
 log = get_logger("airlock.mcp.server")
 
@@ -31,7 +33,8 @@ _READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 class ColumnInfo(BaseModel):
     name: str
     type: str
-    sensitive: bool
+    policy: Literal["allow", "mask", "deny"]  # what a query touching this column would trigger
+    note: str | None = None  # mask strategy or denial reason, so the agent can plan around it
 
 
 class TablesResult(BaseModel):
@@ -45,6 +48,38 @@ class DescribeResult(BaseModel):
     in_scope: bool
     columns: list[ColumnInfo]
     note: str | None = None
+
+
+def _column_info(ds: DatasetFacts, col: ColumnFact, graph: PolicyGraph) -> ColumnInfo:
+    """One column's governance outcome, resolved through the same engine that enforces it, so the
+    plan the agent reads here matches exactly what a query would trigger."""
+    outcome = column_outcome(ds, col.name, col.data_type, col.tags, col.glossary_terms, graph)
+    if outcome.kind == "mask":
+        note = f"masked with {outcome.strategy}"
+    elif outcome.kind == "deny":
+        note = f"denied ({_classification(col)}); returns NULL or blocks the query"
+    else:
+        note = None
+    return ColumnInfo(name=col.name, type=col.data_type, policy=outcome.kind, note=note)
+
+
+def _classification(col: ColumnFact) -> str:
+    if col.glossary_terms:
+        return sorted(col.glossary_terms)[0]
+    if col.tags:
+        return sorted(col.tags)[0]
+    return "sensitive"
+
+
+def _describe_note(masked: int, denied: int) -> str | None:
+    parts = []
+    if masked:
+        parts.append(f"{masked} column(s) masked")
+    if denied:
+        parts.append(f"{denied} denied")
+    if not parts:
+        return None
+    return f"{', '.join(parts)} when queried; select only what you need."
 
 
 def build_mcp(gateway: Gateway, principal_name: str) -> FastMCP:
@@ -124,9 +159,11 @@ def build_mcp(gateway: Gateway, principal_name: str) -> FastMCP:
         name="warehouse_describe_table",
         title="Describe a table's columns",
         description=(
-            "Return a table's columns and types from the catalog, flagging which are sensitive "
-            "(masked or denied when queried). Use it to plan a query that avoids protected columns. "
-            "Tables outside your scope return in_scope=false with no columns."
+            "Return a table's columns and types from the catalog, each annotated with the policy "
+            "that would fire if you queried it: allow, mask (with the masking strategy), or deny "
+            "(with the reason). Read this before writing a query to select only columns you can use "
+            "and avoid a denial round-trip. Tables outside your scope return in_scope=false with no "
+            "columns."
         ),
         annotations=_READ_ONLY,
         structured_output=True,
@@ -148,11 +185,15 @@ def build_mcp(gateway: Gateway, principal_name: str) -> FastMCP:
                 columns=[],
                 note="This table is outside your scope; use warehouse_list_tables to see what you can read.",
             )
-        columns = [
-            ColumnInfo(name=c.name, type=c.data_type, sensitive=bool(c.tags or c.glossary_terms))
-            for c in ds.columns
-        ]
-        return DescribeResult(table=ds.name, in_scope=True, columns=columns)
+        columns = [_column_info(ds, c, graph) for c in ds.columns]
+        masked = sum(1 for c in columns if c.policy == "mask")
+        denied = sum(1 for c in columns if c.policy == "deny")
+        return DescribeResult(
+            table=ds.name,
+            in_scope=True,
+            columns=columns,
+            note=_describe_note(masked, denied),
+        )
 
     return mcp
 
