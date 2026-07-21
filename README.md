@@ -33,9 +33,7 @@
   <img src="docs/assets/rewrite.svg" alt="Before and after: the query an agent sends versus the query Airlock actually runs" width="880" />
 </p>
 
-The agent asked for `ssn`. It didn't get `ssn`. It got told *why* it didn't get `ssn`, in a form it could read, so its next query didn't ask again. No warehouse grants were rewritten, no view was rebuilt, and the whole thing is in the audit log with the exact policy version that made the call.
-
-That is the entire pitch. The rest of this README is how.
+The agent asked for `ssn` and didn't get it. It got told *why*, in a form it could read, so its next query didn't ask again. No warehouse grants were rewritten, no view was rebuilt, and the decision sits in the audit log next to the exact policy version behind it.
 
 ## The problem
 
@@ -52,10 +50,10 @@ Security is right. And the options on the table are all bad:
 |---|---|
 | **Broad service account** | The agent reads anything the account can. One prompt injection from exfiltrating `users.ssn`. Auditors will (correctly) fail this. |
 | **Warehouse RBAC / masking views** | Static, role-based, per-warehouse. Nobody maintains per-agent grants across hundreds of tables; policy drifts from reality within a month. Every reclassification means new `GRANT`s and rebuilt views. |
-| **Enterprise access platforms** (Satori, Immuta, Cyral) | The enforcement model works — but six-figure contracts, built for human BI users, and not agent-aware: a blocked query is a dead end, not a correction signal. |
+| **Enterprise access platforms** (Satori, Immuta, Cyral) | The enforcement model works, but: six-figure contracts, built for human BI users, and not agent-aware. A blocked query is a dead end, not a correction signal. |
 | **Generic MCP gateways** (the 2026 crop) | Auth, tool allowlists, rate limits, and regex PII scanning of *strings*. None of them parse SQL, none know which columns are sensitive *in your org*, and none know `users_raw` was deprecated last Tuesday. Regex on a result set is not a security boundary. |
 
-So pilots stall in security review, or they ship with an over-permissioned credential and become a breach report waiting to be written. The blast radius of one such credential is your entire warehouse; one leaked answer with unmasked PII is a reportable GDPR/CCPA incident. Teams don't need a smarter agent. They need a place to stand between the agent and the data.
+So pilots stall in security review, or they ship with an over-permissioned credential that becomes the next breach report. The blast radius of one such credential is your entire warehouse; one leaked answer with unmasked PII is a reportable GDPR/CCPA incident. Teams don't need a smarter agent. They need a place to stand between the agent and the data.
 
 ## The solution
 
@@ -66,10 +64,10 @@ Airlock is that place: a small, self-hostable gateway that speaks **MCP** to the
 </p>
 
 1. **Every query is parsed, not pattern-matched.** Airlock builds a full AST with [sqlglot](https://sqlglot.com), qualifies every column through aliases, CTEs, subqueries, and `SELECT *`, and resolves each one to a catalog URN. A column smuggled through three aliases is still the column it is.
-2. **Policy is compiled from DataHub, not hand-written.** Column tags (`PII`, `Sensitive`), glossary terms, deprecation status, certification, domains, ownership — the facts your governance team already maintains — become enforceable rules. Airlock makes the catalog *load-bearing* instead of decorative.
-3. **Enforcement is a query rewrite.** Masking, column denial, row-limit and timeout injection, and — the part nobody else does — **certified-table substitution**: query a deprecated table and, if lineage points to a certified equivalent with a compatible schema, Airlock quietly redirects you there.
-4. **Every intervention is explained in a machine-readable envelope.** A blocked human retries in frustration. A blocked agent that reads *"column `ssn` denied under rule `pii-hard-deny` — no substitute; try an aggregate over a non-sensitive key"* fixes itself on the next turn. Guardrails become steering.
-5. **Every decision is written back.** Local JSONL audit, optional OpenTelemetry, and an access ledger written into DataHub — so the graph accumulates a queryable record of what each agent touched, when, and under which policy snapshot.
+2. **Policy is compiled from DataHub, not hand-written.** Column tags (`PII`, `Sensitive`), glossary terms, deprecation status, certification, domains, and ownership are facts your governance team already maintains; Airlock turns them into enforceable rules and makes the catalog *load-bearing* instead of decorative.
+3. **Enforcement is a query rewrite.** Masking, column denial, row-limit and timeout injection, and the part nobody else does: **certified-table substitution**. Query a deprecated table and, if lineage points to a certified equivalent with a compatible schema, Airlock quietly redirects you there.
+4. **Every intervention is explained in a machine-readable envelope.** A blocked human retries in frustration. A blocked agent that reads *"column `ssn` denied under rule `pii-hard-deny`; no substitute; try an aggregate over a non-sensitive key"* fixes itself on the next turn. Guardrails become steering.
+5. **Every decision is written back.** Local JSONL audit, optional OpenTelemetry, and an access ledger written into DataHub, so the graph accumulates a queryable record of what each agent touched, when, and under which policy snapshot.
 
 **One sentence:** Airlock turns your metadata catalog into a runtime security boundary for AI agents, with enforcement your CISO can audit and explanations your agent can act on.
 
@@ -80,9 +78,9 @@ Airlock is that place: a small, self-hostable gateway that speaks **MCP** to the
 - **Agent builders** whose text-to-SQL pilots keep dying in security review.
 - **Governance teams** tired of curating a catalog nobody enforces.
 
-## No mock mode. There is no mock mode.
+## No mock mode
 
-This is worth being blunt about, because it's the thing most hackathon projects fake. Airlock has no `--mock` flag, no fixture fallback, no canned classifications, no "demo path" that skips the real work.
+Most hackathon projects fake this part, so it's worth being plain about. Airlock has no `--mock` flag, no fixture fallback, no canned classifications, no "demo path" that skips the real work.
 
 - **DataHub is a hard dependency, by design.** `airlock serve` refuses to start until it has compiled a policy snapshot from a live DataHub. If the catalog is unreachable you get a named, actionable error — never a silent fallback to an empty (allow-everything) policy. There is no code path that makes an access decision the graph didn't produce.
 - **The demo stack *is* the product.** `python demo/up.py` boots a real DataHub (official quickstart images), ingests a classified retail catalog through the real ingestion API, loads matching rows into a real DuckDB file, and starts Airlock against both. The scripted prompts run the exact code path production traffic runs: parse → resolve → decide → rewrite → execute → audit → write-back.
@@ -186,47 +184,47 @@ ORDER BY o.total DESC LIMIT 10
 }
 ```
 
-The agent reads the verdicts, understands *why*, and — in our demo transcript — reformulates its next query without `ssn`, unprompted. That's the whole difference between a gateway built for humans and one built for agents.
+The agent reads the verdicts, understands *why*, and (in our demo transcript) reformulates its next query without `ssn`, unprompted. That is the difference between a gateway built for humans and one built for agents.
 
 ## Features
 
 **Enforcement**
-- **Semantic SQL firewall** — AST analysis, never regex. CTEs, subqueries, joins, aliases, `UNION`, window functions.
-- **In-flight column masking** — strategies: `null`, `hash` (salted SHA-256; equality-preserving, so `GROUP BY` / `COUNT DISTINCT` still work), `partial_email`, `partial_phone`, `generalize_date` (day→month), `fixed_string`. Extensible via one Python entry point.
-- **Column denial** — hard-deny columns (e.g. `PII.SSN`) regardless of principal.
-- **Classification propagation along column lineage** — a column derived from a masked or denied column inherits its protection, even when the derived table was never tagged. Airlock reads DataHub's fine-grained (column-level) lineage and, for any unclassified column, follows it upstream to the strictest classification it descends from — so PII that flows into a summary table is masked without waiting for anyone to re-tag it. This is the leak most static setups miss; DataHub Cloud offers it as a term-propagation automation, and Airlock does it deterministically at enforcement time on open-source DataHub. Reason codes `AIRLOCK-113` (mask) / `AIRLOCK-122` (deny) name the source column; `lineage_propagation: off` disables it.
-- **Predicate protection** — masked columns are guarded in `WHERE` / `HAVING` / `ORDER BY` / `JOIN ON` too, closing the membership-inference leak (`WHERE email='x'` proving a row exists). Block the predicate or rewrite it against the masked form — your call.
-- **Certified-table substitution** — deprecated/uncertified references redirected to certified equivalents found through lineage, gated by a schema-compatibility check. Modes: `rewrite`, `warn`, `off`.
-- **Statement-class control** — read-only by default; `INSERT`/`UPDATE`/`DELETE`/DDL denied with an explanation unless explicitly allowlisted per principal.
-- **Row-limit + timeout injection** — every query gets a `LIMIT` cap and a statement timeout unless the principal is exempt.
-- **Scope enforcement** — principals are confined to DataHub domains/platforms; cross-domain reads are denied with the owning team named in the explanation.
+- **Semantic SQL firewall**: AST analysis, never regex. CTEs, subqueries, joins, aliases, `UNION`, window functions.
+- **In-flight column masking**: strategies: `null`, `hash` (salted SHA-256; equality-preserving, so `GROUP BY` / `COUNT DISTINCT` still work), `partial_email`, `partial_phone`, `generalize_date` (day→month), `fixed_string`. Extensible via one Python entry point.
+- **Column denial**: hard-deny columns (e.g. `PII.SSN`) regardless of principal.
+- **Classification propagation along column lineage**: a column derived from a masked or denied column inherits its protection, even when the derived table was never tagged. Airlock reads DataHub's fine-grained (column-level) lineage and, for any unclassified column, follows it upstream to the strictest classification it descends from — so PII that flows into a summary table is masked without waiting for anyone to re-tag it. This is the leak most static setups miss; DataHub Cloud offers it as a term-propagation automation, and Airlock does it deterministically at enforcement time on open-source DataHub. Reason codes `AIRLOCK-113` (mask) / `AIRLOCK-122` (deny) name the source column; `lineage_propagation: off` disables it.
+- **Predicate protection**: masked columns are guarded in `WHERE` / `HAVING` / `ORDER BY` / `JOIN ON` too, closing the membership-inference leak (`WHERE email='x'` proving a row exists). Block the predicate or rewrite it against the masked form — your call.
+- **Certified-table substitution**: deprecated/uncertified references redirected to certified equivalents found through lineage, gated by a schema-compatibility check. Modes: `rewrite`, `warn`, `off`.
+- **Statement-class control**: read-only by default; `INSERT`/`UPDATE`/`DELETE`/DDL denied with an explanation unless explicitly allowlisted per principal.
+- **Row-limit + timeout injection**: every query gets a `LIMIT` cap and a statement timeout unless the principal is exempt.
+- **Scope enforcement**: principals are confined to DataHub domains/platforms; cross-domain reads are denied with the owning team named in the explanation.
 
 **Policy**
-- **Catalog-compiled** — rules bind to *classifications* (tags, glossary terms, lifecycle, certification), not table names. Tag a new column `PII` in DataHub; it's enforced on the next refresh with zero Airlock changes.
-- **Policy-as-code** — `airlock.yaml` lives in Git and goes through code review like anything else. `airlock policy lint` validates before deploy; `airlock policy diff` shows what a change would alter.
-- **Principals & identities** — per-agent keys mapped to named principals with scopes; unknown principals get the deny-by-default anonymous policy.
-- **Dry-run everything** — `airlock check <sql> --as <principal>` shows the full decision without executing; `enforce: monitor` logs verdicts without applying them, for safe rollout.
-- **Coverage reporting** — `airlock coverage` reports what the policy can actually enforce and where the catalog leaves it blind: governed vs merely classified columns, rules that match nothing, deprecated tables with no certified substitute, datasets no principal can reach, and columns whose names read as sensitive while carrying no classification any rule acts on. `--fail-under` and `--strict` make governance posture a CI gate.
-- **Classification proposals** — `airlock propose` writes those suspected-sensitive columns back to DataHub as a structured property on each dataset, so a steward sees the gateway's finding in the catalog and can tag it. The gateway improves the graph it enforces from — the write-back loop DataHub asks for, aimed at closing its own blind spots. Idempotent, and `--dry-run` shows the list without writing.
+- **Catalog-compiled**: rules bind to *classifications* (tags, glossary terms, lifecycle, certification), not table names. Tag a new column `PII` in DataHub; it's enforced on the next refresh with zero Airlock changes.
+- **Policy-as-code**: `airlock.yaml` lives in Git and goes through code review like anything else. `airlock policy lint` validates before deploy; `airlock policy diff` shows what a change would alter.
+- **Principals & identities**: per-agent keys mapped to named principals with scopes; unknown principals get the deny-by-default anonymous policy.
+- **Dry-run everything**: `airlock check <sql> --as <principal>` shows the full decision without executing; `enforce: monitor` logs verdicts without applying them, for safe rollout.
+- **Coverage reporting**: `airlock coverage` reports what the policy can actually enforce and where the catalog leaves it blind: governed vs merely classified columns, rules that match nothing, deprecated tables with no certified substitute, datasets no principal can reach, and columns whose names read as sensitive while carrying no classification any rule acts on. `--fail-under` and `--strict` make governance posture a CI gate.
+- **Classification proposals**: `airlock propose` writes those suspected-sensitive columns back to DataHub as a structured property on each dataset, so a steward sees the gateway's finding in the catalog and can tag it. The gateway improves the graph it enforces from — the write-back loop DataHub asks for, aimed at closing its own blind spots. Idempotent, and `--dry-run` shows the list without writing.
 
 **Explanations & DX**
 - **Machine-readable verdict envelope** on every response — stable reason codes (`1xx` mask, `2xx` substitute, `3xx`/`4xx` deny & faults), human reasons, catalog deep links, actionable hints.
-- **Human-friendly errors** — what happened, why, what to do next. No stack traces across the wire, ever.
-- **`airlock tail`** — live colorized decision stream for demos and debugging; `airlock explain <request_id>` replays any past decision.
+- **Human-friendly errors**: what happened, why, what to do next. No stack traces across the wire, ever.
+- **`airlock tail`**: live colorized decision stream for demos and debugging; `airlock explain <request_id>` replays any past decision.
 
 **Audit & write-back**
 - **Append-only JSONL audit** with the policy-snapshot hash on every decision (prove *which* policy version made *which* call).
-- **DataHub write-back** — ledger entries as catalog documents plus per-dataset structured properties (`airlock.lastAgentAccess`, `airlock.deniedAttempts`, and `airlock.suspectedSensitive` from `airlock propose`), so agent behavior *and* the gateway's own classification findings are queryable inside the graph.
-- **Agent usage on the Stats tab** — every executed read is written back as DataHub's native `datasetUsageStatistics`: per-dataset query counts, per-column read counts, and a per-agent breakdown, all landing on the dataset's own Stats tab. Airlock is the only door these agents use to reach the warehouse, so it is the only place this data exists. The daily tally is re-emitted whole (DataHub keys a timeseries document by dataset, aspect, and day, so re-writing the bucket replaces it), which makes the write idempotent, self-healing after a dropped write-back, and restart-safe. `airlock usage` reads it back; `datahub_usage: false` disables it where executed query text must not leave the gateway.
+- **DataHub write-back**: ledger entries as catalog documents plus per-dataset structured properties (`airlock.lastAgentAccess`, `airlock.deniedAttempts`, and `airlock.suspectedSensitive` from `airlock propose`), so agent behavior *and* the gateway's own classification findings are queryable inside the graph.
+- **Agent usage on the Stats tab**: every executed read is written back as DataHub's native `datasetUsageStatistics`: per-dataset query counts, per-column read counts, and a per-agent breakdown, all landing on the dataset's own Stats tab. Airlock is the only door these agents use to reach the warehouse, so it is the only place this data exists. The daily tally is re-emitted whole (DataHub keys a timeseries document by dataset, aspect, and day, so re-writing the bucket replaces it), which makes the write idempotent, self-healing after a dropped write-back, and restart-safe. `airlock usage` reads it back; `datahub_usage: false` disables it where executed query text must not leave the gateway.
 - **OpenTelemetry** traces/metrics (optional): decision latency, verdict counts, cache hit rate.
 
 **Operations**
 - **Fail-closed by default**, with one explicit, bounded stale-cache window (see edge cases). Every relaxation of safety is a visible config line.
-- **Snapshot cache** — policy compiles to an in-memory graph backed by SQLite; steady-state decisions add low single-digit milliseconds and zero DataHub calls.
-- **Zero warehouse footprint** — masking is inlined SQL expressions; nothing is installed in the database.
+- **Snapshot cache**: policy compiles to an in-memory graph backed by SQLite; steady-state decisions add low single-digit milliseconds and zero DataHub calls.
+- **Zero warehouse footprint**: masking is inlined SQL expressions; nothing is installed in the database.
 - **Health & readiness** (`/healthz`, `/readyz`) — readiness gates on "a valid snapshot is loaded," so an orchestrator never routes to a gateway that can't decide.
-- **Graceful shutdown & cancellation** — Ctrl+C stops new work, cancels in-flight warehouse statements (no orphaned queries burning credits), and drains pending audit writes within a deadline; a client disconnect cancels its statement the same way.
-- **`airlock doctor`** — one command that verifies the whole environment and names the fix for anything broken. First thing to run, last thing to blame.
+- **Graceful shutdown & cancellation**: Ctrl+C stops new work, cancels in-flight warehouse statements (no orphaned queries burning credits), and drains pending audit writes within a deadline; a client disconnect cancels its statement the same way.
+- **`airlock doctor`**: one command that verifies the whole environment and names the fix for anything broken. First thing to run, last thing to blame.
 
 ## Use cases
 
@@ -327,7 +325,7 @@ airlock/
 └── cli/            # init, serve, check, coverage, tail, explain, policy, doctor
 ```
 
-Two details worth calling out, because they're where the catalog earns its keep:
+Two places where the catalog earns its keep:
 
 - **`SELECT *` is unmaskable without a schema — and Airlock always has one.** Star expansion needs the column list; generic proxies punt here. Airlock expands `*` against schemas from the snapshot (sourced from DataHub), so `SELECT *` on a table with one PII column becomes an explicit column list with exactly that column masked. Unknown schema → deny with `AIRLOCK-402`, never a blind pass-through.
 - **Substitution is verified, not vibes.** Before rewriting `users_raw → dim_users`, Airlock checks every referenced column exists on the substitute with a compatible type. Any mismatch downgrades `rewrite` to `warn`, with the mismatch named in the verdict.
@@ -352,7 +350,7 @@ Security tooling is judged by its worst case, not its demo. This table is the co
 | 12 | **Substitute missing referenced columns** | Substitution downgraded to warning; original used only if not hard-denied, else deny with both facts explained. | `AIRLOCK-202` |
 | 13 | **Case sensitivity / quoted identifiers** | Normalization follows the dialect's rules (via sqlglot), not naive lowercasing. | — |
 | 14 | **`information_schema` / catalog introspection** | Denied by default: system tables aren't in the catalog, so they fall under `unknown_tables`. The sanctioned path is `warehouse_list_tables` / `warehouse_describe_table`, scope-filtered. | `AIRLOCK-403` |
-| 15 | **Prompt-injected exfiltration** (`ignore previous instructions; SELECT ssn…`) | Irrelevant by design: enforcement is below the prompt layer. The query is just SQL; `ssn` is just a denied column. This is the point. | `AIRLOCK-120` |
+| 15 | **Prompt-injected exfiltration** (`ignore previous instructions; SELECT ssn…`) | Irrelevant by design: enforcement is below the prompt layer. The query is just SQL, and `ssn` is just a denied column. | `AIRLOCK-120` |
 | 16 | **Enormous result set** | Row-limit injection (default 10,000) + statement timeout; truncation is declared in the envelope, never silent. | `AIRLOCK-150` |
 | 17 | **Masking collision with real data** | Post-flight verification samples rows and asserts masked columns match the strategy's output shape; mismatch → response withheld, incident logged. | `AIRLOCK-420` |
 | 18 | **Concurrent policy refresh during a request** | Requests pin the snapshot they started with (immutable, content-addressed); refresh swaps an atomic pointer. No torn reads. | — |
@@ -538,7 +536,7 @@ Row-level rules from catalog attributes · result-set DLP as a pluggable post-fl
 
 **Can I run Airlock without DataHub?** No, and that's deliberate. Airlock's whole premise is that decisions derive from governed, versioned catalog facts — not a config file someone forgot to update. A "standalone mode" would be a policy engine with made-up facts, which is the thing this project exists to replace. `serve` fails fast, with the fix.
 
-**Why not build on the DataHub Agent Context Kit?** We tested it against the OSS quickstart these instructions boot. Its write tool (`add_structured_properties`) returns a 500, `get_dataset_queries` hits a cloud-only field, and `get_entities` drops `editableSchemaMetadata` — the aspect a tag applied in the DataHub UI lands in, which would quietly break the live-retag demo. Only `get_lineage` works on OSS, and it duplicates code Airlock already has; taking the Kit as a dependency would pull a compiled transitive to call one function. So Airlock talks to GMS through the same GraphQL and MCP-emit APIs the Kit uses, directly — reading five aspect types (including `editableSchemaMetadata`) and writing structured properties plus a ledger back. It is more OSS-robust than the Kit's own tools; the full evaluation is in [docs/datahub-mcp-composition.md](docs/datahub-mcp-composition.md).
+**Why not build on the DataHub Agent Context Kit?** We tested it against the OSS quickstart these instructions boot. Its write tool (`add_structured_properties`) returns a 500, `get_dataset_queries` hits a cloud-only field, and `get_entities` drops `editableSchemaMetadata` — the aspect a tag applied in the DataHub UI lands in, which would quietly break the live-retag demo. Only `get_lineage` works on OSS, and it duplicates code Airlock already has; taking the Kit as a dependency would pull a compiled transitive to call one function. So Airlock talks to GMS through the same GraphQL and MCP-emit APIs the Kit uses, directly: it reads five aspect types (including `editableSchemaMetadata`, which `get_entities` drops) and writes structured properties (which `add_structured_properties` 500s on) plus a ledger back. The full evaluation is in [docs/datahub-mcp-composition.md](docs/datahub-mcp-composition.md).
 
 **Why policy in YAML but facts in DataHub — why not everything in DataHub?** Facts (what is PII, what is deprecated) change often and belong to governance; rules (what happens to PII) change rarely and belong in code review. Splitting them means reclassification deploys instantly while enforcement changes get a human approver.
 
