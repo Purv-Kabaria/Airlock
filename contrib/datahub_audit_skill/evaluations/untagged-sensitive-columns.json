@@ -1,0 +1,12 @@
+{
+  "skills": ["datahub-audit"],
+  "query": "Find columns that look like PII but have no tags",
+  "expected_behavior": [
+    "Searches by fieldPaths for each sensitive token rather than fetching every dataset",
+    "Filters to columns whose tag and glossary term lists are both empty",
+    "Matches on separator-split tokens so emailer_config is not reported for the email token",
+    "Presents results as suspected and unclassified, never asserting the column contains PII",
+    "Includes downstream consumer counts to rank which columns matter most",
+    "Routes the fix to /datahub-enrich"
+  ]
+}

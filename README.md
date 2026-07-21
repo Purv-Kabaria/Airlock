@@ -203,6 +203,7 @@ The agent reads the verdicts, understands *why*, and — in our demo transcript 
 - **Policy-as-code** — `airlock.yaml` lives in Git and goes through code review like anything else. `airlock policy lint` validates before deploy; `airlock policy diff` shows what a change would alter.
 - **Principals & identities** — per-agent keys mapped to named principals with scopes; unknown principals get the deny-by-default anonymous policy.
 - **Dry-run everything** — `airlock check <sql> --as <principal>` shows the full decision without executing; `enforce: monitor` logs verdicts without applying them, for safe rollout.
+- **Coverage reporting** — `airlock coverage` reports what the policy can actually enforce and where the catalog leaves it blind: governed vs merely classified columns, rules that match nothing, deprecated tables with no certified substitute, datasets no principal can reach, and columns whose names read as sensitive while carrying no classification any rule acts on. `--fail-under` and `--strict` make governance posture a CI gate.
 
 **Explanations & DX**
 - **Machine-readable verdict envelope** on every response — stable reason codes (`1xx` mask, `2xx` substitute, `3xx`/`4xx` deny & faults), human reasons, catalog deep links, actionable hints.
@@ -308,6 +309,8 @@ airlock/
 ├── policy/
 │   ├── compile.py  #   DataHub snapshot → PolicyGraph — the only DataHub reader
 │   ├── rules.py    #   rule model + matcher (classification → action)
+│   ├── coverage.py #   pure posture report: what the policy can enforce, and
+│   │               #   where the catalog leaves it blind
 │   └── store.py    #   SQLite-backed snapshot store, content-addressed
 ├── engine/
 │   ├── decide.py   #   pure decision fn: (ResolvedQuery, Principal,
@@ -316,7 +319,7 @@ airlock/
 ├── exec/           # warehouse adapters (duckdb, postgres, snowflake) + timeouts
 ├── audit/          # JSONL sink, OTel sink, DataHub write-back sink
 ├── masking/        # strategy registry (entry-point extensible)
-└── cli/            # init, serve, check, tail, explain, policy lint/diff, doctor
+└── cli/            # init, serve, check, coverage, tail, explain, policy, doctor
 ```
 
 Two details worth calling out, because they're where the catalog earns its keep:
@@ -468,6 +471,36 @@ How those numbers happen:
 - **In-flight coalescing.** Identical concurrent queries from one principal (the impatient double-send) hit the warehouse *once*; every caller gets the result.
 - **Off-path everything.** Snapshot refresh runs in the background. The local audit log is written before the response (line-atomic — no query answered without a durable record); DataHub write-back and OTel export are background tasks drained on shutdown.
 
+## Prior art, and what is actually new here
+
+Column masking driven by data classification is not a new idea. Immuta, Satori, and Privacera build
+businesses on it, and Snowflake and Databricks ship native masking policies. Airlock is not claiming
+to have invented dynamic masking. Three things are different:
+
+**Policy compiles from the catalog you already run.** The commercial tools maintain their own
+metadata plane and expect you to classify data inside it, which means a second source of truth to
+keep in sync with your catalog. Airlock has no metadata store: tags, glossary terms, lifecycle,
+domains, schemas, and lineage are read from DataHub, and the compiled snapshot is content-addressed
+so every decision names the exact catalog version that produced it. Retag a column in the DataHub
+UI and enforcement changes on the next refresh — there is nothing else to update.
+
+**Nothing is installed in the warehouse.** Native masking policies are DDL: per-warehouse, per-
+dialect, applied by someone with elevated rights, and invisible from outside the database. Airlock
+rewrites the query in flight, so the same policy covers DuckDB and Postgres identically and leaves
+no footprint to drift or migrate.
+
+**The denial is addressed to a machine.** This is the part with no equivalent elsewhere. Existing
+tools are built for humans in BI tools: they mask silently or return an error meant to be read by a
+person. An agent handed "permission denied" retries the same query, or hallucinates around the gap.
+Airlock returns a structured envelope — a stable `AIRLOCK-NNN` reason code, the subject, a human
+reason, and at least one actionable hint — so the agent can reformulate on the next call instead of
+guessing. The eval suite tests exactly that loop: deny, then successful reformulation.
+
+Where those tools are ahead: row-level security, mature policy authoring UIs, many more warehouse
+connectors, and years of production mileage. If you need row-level policy today, use one of them —
+Airlock's granularity is table, column, and statement (see [`docs/rls.md`](docs/rls.md) for the
+design).
+
 ## Security model & honest limitations
 
 **In scope:** column/table/statement access enforcement for SQL issued through Airlock; masking; audit; scope confinement; membership-inference protection on masked columns.
@@ -488,6 +521,8 @@ Row-level rules from catalog attributes · result-set DLP as a pluggable post-fl
 - **Throw anything at it.** Send two prompts at once. Double-click. Kill the DataHub container mid-session and keep querying. Paste garbage into `run_query`. Ctrl+C the gateway mid-query and restart. Re-run `up.py`. Every one of these is a row in the edge-case table, has a named behavior, and is exercised by `make judge` — an automated hostile-user gauntlet that must be green on all three OSes before we tag a release. Make Airlock traceback, hang, or answer without a verdict and that's a bug we want filed.
 - **Change the policy live.** Add the `PII` tag to a column in the DataHub UI, wait one refresh (or `airlock refresh`), re-ask the same question — the answer changes. Fastest way to confirm nothing is mocked.
 - **Sample outputs, no setup:** [`examples/`](examples/) has captured request/response envelopes, before/after SQL pairs, and a full audit log — regenerated by `make examples`, never hand-edited.
+- **Ask it what it can't protect.** `airlock coverage` reports its own blind spots: columns that look sensitive but carry no classification, rules that match nothing, tables no principal can reach. A security tool that only reports its wins is not one you should trust.
+- **Upstream contributions:** two, both in [`contrib/`](contrib/) and kept dependency-isolated. A push-based snapshot-refresh [DataHub Action](contrib/datahub_action/), and [`datahub-audit`](contrib/datahub_audit_skill/) — a skill the `datahub-skills` registry routes users to from seven places across five files but never shipped.
 - **Where DataHub is load-bearing:** policy compilation (tags, glossary, lifecycle, domains, schemas), star-expansion schemas, substitution via lineage, scope enforcement via domains, and the write-back ledger. Remove DataHub and Airlock cannot start — literally: `serve` refuses without a compiled snapshot. Design, not an integration checkbox.
 
 ## FAQ
@@ -501,6 +536,8 @@ Row-level rules from catalog attributes · result-set DLP as a pluggable post-fl
 **What if sqlglot can't parse my dialect's exotic syntax?** The query fails closed with the parse error — the same guarantee a firewall gives for traffic it can't classify. Per-adapter dialect coverage is tested in CI.
 
 **Does masking break the agent's analysis?** Less than you'd think. The hash strategy preserves equality, so distributions, joins on masked keys, `GROUP BY`, and `COUNT DISTINCT` stay correct. The verdict hints tell the agent which operations remain valid.
+
+**Our catalog is barely tagged — won't Airlock just deny everything?** This is the most common real objection, so there is a command for it: `airlock coverage` reports exactly how much of your catalog the policy can act on, which columns look sensitive but carry no classification, and which rules match nothing at all. Run it before you turn anything on. Sparse classification is a catalog problem that Airlock makes visible rather than one it papers over — the alternative, guessing classifications from column names, is precisely the untrustworthy behavior this project exists to replace. Roll out with `enforce: monitor`, work the coverage report down, then flip to enforce.
 
 **Is this production-ready?** In engineering discipline, yes from day one: fail-closed defaults, zero mock paths, content-addressed snapshots, CI-enforced latency and concurrency budgets, a three-OS matrix, graceful shutdown, health/readiness endpoints, and a hostile-user gauntlet gating every release. What it lacks is mileage — months of real traffic finding the failure modes tests don't. Honest path: run `enforce: monitor` against real traffic for a week, review the verdicts, then flip to enforce.
 

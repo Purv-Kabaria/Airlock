@@ -1,0 +1,12 @@
+{
+  "skills": ["datahub-audit"],
+  "query": "How complete is the metadata for our Finance domain?",
+  "expected_behavior": [
+    "Scopes every query to the Finance domain instead of the whole catalog",
+    "Reports classified and governed classification coverage as two separate numbers",
+    "Marks governed coverage as not measured when no enforcement layer is named",
+    "Distinguishes not-measured from zero for any Cloud-only dimension on an OSS instance",
+    "Validates a filter with list-filters or --dry-run before reporting a dimension as 0%",
+    "Produces a report using the audit-report template with a grade and a ranked fix list"
+  ]
+}

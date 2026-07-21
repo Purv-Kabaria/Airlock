@@ -1,0 +1,14 @@
+{
+  "skills": ["datahub-audit"],
+  "query": "Audit our catalog metadata coverage",
+  "expected_behavior": [
+    "Asks for or infers scope before querying, rather than enumerating the whole catalog",
+    "Establishes the denominator with a facets-only count before measuring any dimension",
+    "Measures ownership, documentation, classification, domain, and lineage coverage",
+    "Projects both editable and non-editable description fields when counting documentation",
+    "Resolves siblings so a dbt model and its warehouse table count as one logical asset",
+    "Reports every percentage with its denominator",
+    "Ranks fixes by blast radius rather than by count",
+    "Hands off remediation to /datahub-enrich rather than mutating metadata"
+  ]
+}
