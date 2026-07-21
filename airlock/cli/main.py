@@ -19,7 +19,13 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from airlock.cli.render import console, render_audit_line, render_coverage, render_envelope
+from airlock.cli.render import (
+    console,
+    render_audit_line,
+    render_coverage,
+    render_envelope,
+    render_proposals,
+)
 from airlock.config import AirlockConfig, load_config
 from airlock.errors import AirlockError, ConfigError, SnapshotUnavailableError
 from airlock.policy.coverage import CoverageReport, DatasetGap
@@ -196,6 +202,55 @@ def _coverage_payload(report: CoverageReport) -> dict[str, Any]:
 
 def _gap_payload(gap: DatasetGap) -> dict[str, str]:
     return {"name": gap.name, "urn": gap.urn, "detail": gap.detail}
+
+
+@app.command()
+def propose(
+    config: Path = _CONFIG_OPT,
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be written to DataHub, write nothing."
+    ),
+) -> None:
+    """Propose classifications for suspected-sensitive columns back to DataHub.
+
+    Coverage flags columns whose names read as sensitive but that no rule classifies. This writes
+    those findings to each dataset as a structured property, so a steward sees Airlock's suggestion
+    in the catalog and can tag the column - the gateway improving the graph it enforces from.
+    Idempotent: re-running overwrites the property, and any tagged column drops off the list.
+    """
+    from airlock.audit.datahub_sink import write_classification_proposals
+    from airlock.policy.compile import compile_snapshot
+    from airlock.policy.coverage import measure_coverage
+
+    cfg = _load(config)
+    try:
+        graph = compile_snapshot(cfg)
+    except SnapshotUnavailableError as exc:
+        err.print(f"[red]{exc}[/]")
+        raise typer.Exit(2) from exc
+
+    report = measure_coverage(graph)
+    render_proposals(report.suspected_gaps, dry_run=dry_run)
+    proposals = _proposals_from_gaps(report.suspected_gaps)
+    if dry_run or not proposals:
+        return
+    try:
+        written = write_classification_proposals(cfg, proposals)
+    except Exception as exc:  # narrow enough: any DataHub write failure is reported, not raised
+        err.print(f"[red]Could not write proposals to DataHub: {exc}[/]")
+        raise typer.Exit(2) from exc
+    console.print(
+        f"[green]Wrote suspected-sensitive proposals to {written} dataset(s) in DataHub "
+        f"(structured property airlock.suspectedSensitive).[/]"
+    )
+
+
+def _proposals_from_gaps(gaps: tuple[Any, ...]) -> dict[str, tuple[str, ...]]:
+    """Group suspected gaps into one structured-property value list per dataset URN."""
+    by_dataset: dict[str, list[str]] = {}
+    for gap in gaps:
+        by_dataset.setdefault(gap.dataset_urn, []).append(f"{gap.column}: looks like {gap.reason}")
+    return {urn: tuple(values) for urn, values in by_dataset.items()}
 
 
 @app.command()

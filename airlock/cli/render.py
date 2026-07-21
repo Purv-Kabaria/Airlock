@@ -14,7 +14,7 @@ from rich.table import Table
 
 from airlock.audit.record import AuditRecord
 from airlock.engine.verdicts import Envelope, EnvelopeStatus
-from airlock.policy.coverage import CoverageReport, DatasetGap
+from airlock.policy.coverage import CoverageReport, DatasetGap, SuspectedGap
 
 console = Console()
 
@@ -144,6 +144,23 @@ def _render_dataset_gaps(title: str, gaps: tuple[DatasetGap, ...]) -> None:
         # The detail repeats the heading for single-cause sections; only print what it adds.
         suffix = f" [dim]{gap.detail}[/]" if gap.detail != title else ""
         console.print(f"  [cyan]{gap.name}[/]{suffix}")
+
+
+def render_proposals(gaps: tuple[SuspectedGap, ...], *, dry_run: bool) -> None:
+    """Show the suspected-sensitive columns Airlock will propose back to DataHub."""
+    if not gaps:
+        console.print(
+            "[green]No suspected-sensitive columns without classification. Nothing to propose.[/]"
+        )
+        return
+    verb = "Would propose" if dry_run else "Proposing"
+    table = Table(title=f"{verb} {len(gaps)} classification(s) to DataHub", title_justify="left")
+    table.add_column("dataset", style="cyan")
+    table.add_column("column", style="bold")
+    table.add_column("looks like", style="yellow")
+    for gap in gaps:
+        table.add_row(gap.dataset_name, gap.column, gap.reason)
+    console.print(table)
 
 
 def _bar(pct: float, width: int = 20) -> str:

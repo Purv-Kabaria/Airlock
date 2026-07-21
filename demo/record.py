@@ -257,12 +257,17 @@ def main() -> int:
     pace.beat(14)
 
     caption(
-        "2:35  The honest close",
-        "Airlock reports its own blind spots: columns that look sensitive but carry no tag,",
-        "rules that match nothing. A security tool that only reports its wins is not trustworthy.",
+        "2:30  It finds its own blind spots - and fixes them",
+        "Airlock flags columns that read as sensitive but carry no tag. customer_phone here.",
+        "Then it proposes the classification back to DataHub - the gateway improving the catalog.",
     )
     run_airlock(["coverage"])
-    pace.beat(12)
+    pace.beat(8)
+    console.print(
+        "\n[bold yellow]>> airlock proposes the missing classification back to DataHub[/]\n"
+    )
+    run_airlock(["propose"])
+    pace.beat(10)
 
     console.print(
         Panel(

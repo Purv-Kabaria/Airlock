@@ -70,6 +70,6 @@
       "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
     }
   ],
-  "policy_snapshot": "sha256:59ff77489820396518d47fecb476acc2b3d9f844d3510b63d3cb91ed7ddf6f29",
+  "policy_snapshot": "sha256:5696670aea84e21da6b36ca4901e3e2c7089f5a7fa0c8b45401804625850ba1b",
   "audit_ref": null
 }

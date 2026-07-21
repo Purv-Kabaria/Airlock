@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Mapping
 from typing import Any
 
 from airlock.audit.record import AuditRecord
@@ -27,6 +28,7 @@ _ENTITY_TYPES = ["urn:li:entityType:datahub.dataset"]
 _PROP_LAST_ACCESS = "airlock.lastAgentAccess"
 _PROP_SNAPSHOT = "airlock.lastPolicySnapshot"
 _PROP_DENIED = "airlock.deniedAttempts"
+_PROP_SUSPECTED = "airlock.suspectedSensitive"
 
 
 class DatahubLedgerSink:
@@ -60,7 +62,6 @@ class DatahubLedgerSink:
             AuditStampClass,
             InstitutionalMemoryClass,
             InstitutionalMemoryMetadataClass,
-            StructuredPropertiesClass,
             StructuredPropertyValueAssignmentClass,
         )
 
@@ -78,11 +79,10 @@ class DatahubLedgerSink:
                 propertyUrn=_prop_urn(_PROP_DENIED), values=[float(denied_count)]
             ),
         ]
-        client.emit_mcp(
-            MetadataChangeProposalWrapper(
-                entityUrn=urn, aspect=StructuredPropertiesClass(properties=assignments)
-            )
-        )
+        # Merge, don't overwrite: a StructuredProperties aspect is the full set, so emitting only the
+        # audit assignments would wipe a suspected-sensitive proposal (`airlock propose`) on the same
+        # dataset. Keep every foreign assignment; replace only our three.
+        _merge_and_emit(client, urn, assignments)
 
         summary = (
             f"{record.principal} ran {record.request_id} ({record.status}); "
@@ -169,3 +169,64 @@ class DatahubLedgerSink:
 
 def _prop_urn(qualified: str) -> str:
     return f"urn:li:structuredProperty:{qualified}"
+
+
+def _merge_and_emit(client: Any, urn: str, new_assignments: list[Any]) -> None:
+    """Set `new_assignments` on a dataset's structured-properties aspect while preserving every
+    other assignment already there. The aspect is the full set, so a naive emit would drop foreign
+    properties; read-modify-write keeps the audit sink and `airlock propose` from clobbering each
+    other on a shared dataset."""
+    from datahub.emitter.mcp import MetadataChangeProposalWrapper
+    from datahub.metadata.schema_classes import StructuredPropertiesClass
+
+    replaced = {a.propertyUrn for a in new_assignments}
+    current = client.get_aspect(entity_urn=urn, aspect_type=StructuredPropertiesClass)
+    kept = [a for a in (current.properties if current else []) if a.propertyUrn not in replaced]
+    client.emit_mcp(
+        MetadataChangeProposalWrapper(
+            entityUrn=urn, aspect=StructuredPropertiesClass(properties=kept + new_assignments)
+        )
+    )
+
+
+def write_classification_proposals(
+    config: AirlockConfig, proposals: Mapping[str, tuple[str, ...]]
+) -> int:
+    """Write Airlock's suspected-sensitive findings back to DataHub as a structured property on each
+    dataset, so a steward sees the gateway's suggestion in the catalog and can act on it. Overwrites
+    the property (idempotent) and preserves any other Airlock properties already on the dataset.
+    Returns the number of datasets written. Raises on connection failure - the caller reports it."""
+    if not proposals:
+        return 0
+    from datahub.ingestion.graph.client import DatahubClientConfig, DataHubGraph
+    from datahub.metadata.schema_classes import StructuredPropertyValueAssignmentClass
+
+    client = DataHubGraph(
+        DatahubClientConfig(server=config.datahub.url, token=config.datahub.token)
+    )
+    _ensure_suspected_definition(client)
+    for urn, columns in proposals.items():
+        assignment = StructuredPropertyValueAssignmentClass(
+            propertyUrn=_prop_urn(_PROP_SUSPECTED), values=list(columns)
+        )
+        _merge_and_emit(client, urn, [assignment])
+    log.info("proposals.written", datasets=len(proposals))
+    return len(proposals)
+
+
+def _ensure_suspected_definition(client: Any) -> None:
+    from datahub.emitter.mcp import MetadataChangeProposalWrapper
+    from datahub.metadata.schema_classes import StructuredPropertyDefinitionClass
+
+    client.emit_mcp(
+        MetadataChangeProposalWrapper(
+            entityUrn=_prop_urn(_PROP_SUSPECTED),
+            aspect=StructuredPropertyDefinitionClass(
+                qualifiedName=_PROP_SUSPECTED,
+                valueType="urn:li:dataType:datahub.string",
+                entityTypes=_ENTITY_TYPES,
+                displayName="Airlock suspected-sensitive columns",
+                cardinality="MULTIPLE",
+            ),
+        )
+    )

@@ -49,8 +49,9 @@ edit the demo, edit this.
 > the exact policy snapshot that made the call, a running count of denied attempts. Your governance
 > team can see what agents did to their data inside the catalog they already use."
 
-### The honest close (2:35–2:55)
+### It finds and fixes its blind spots (2:30–2:55)
 > "One last thing. Airlock only enforces what the catalog states, so it reports its own blind spots —
-> columns that look sensitive but carry no tag, rules that match nothing. A security tool that only
-> shows its wins isn't one you should trust. Apache 2.0, runs on any laptop with Docker and Python,
-> and there is no mock mode. Everything you just saw was live."
+> here, a `customer_phone` column nobody classified. And it doesn't just report it: `airlock propose`
+> writes that finding back to DataHub, so a steward sees the gateway's suggestion in the catalog and
+> can tag it. The gateway improves the graph it enforces from. Apache 2.0, runs on any laptop with
+> Docker and Python, no mock mode — everything you just saw was live."

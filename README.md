@@ -206,6 +206,7 @@ The agent reads the verdicts, understands *why*, and — in our demo transcript 
 - **Principals & identities** — per-agent keys mapped to named principals with scopes; unknown principals get the deny-by-default anonymous policy.
 - **Dry-run everything** — `airlock check <sql> --as <principal>` shows the full decision without executing; `enforce: monitor` logs verdicts without applying them, for safe rollout.
 - **Coverage reporting** — `airlock coverage` reports what the policy can actually enforce and where the catalog leaves it blind: governed vs merely classified columns, rules that match nothing, deprecated tables with no certified substitute, datasets no principal can reach, and columns whose names read as sensitive while carrying no classification any rule acts on. `--fail-under` and `--strict` make governance posture a CI gate.
+- **Classification proposals** — `airlock propose` writes those suspected-sensitive columns back to DataHub as a structured property on each dataset, so a steward sees the gateway's finding in the catalog and can tag it. The gateway improves the graph it enforces from — the write-back loop DataHub asks for, aimed at closing its own blind spots. Idempotent, and `--dry-run` shows the list without writing.
 
 **Explanations & DX**
 - **Machine-readable verdict envelope** on every response — stable reason codes (`1xx` mask, `2xx` substitute, `3xx`/`4xx` deny & faults), human reasons, catalog deep links, actionable hints.
@@ -214,7 +215,7 @@ The agent reads the verdicts, understands *why*, and — in our demo transcript 
 
 **Audit & write-back**
 - **Append-only JSONL audit** with the policy-snapshot hash on every decision (prove *which* policy version made *which* call).
-- **DataHub write-back** — ledger entries as catalog documents plus per-dataset structured properties (`airlock.lastAgentAccess`, `airlock.deniedAttempts`), so agent behavior is queryable inside the graph.
+- **DataHub write-back** — ledger entries as catalog documents plus per-dataset structured properties (`airlock.lastAgentAccess`, `airlock.deniedAttempts`, and `airlock.suspectedSensitive` from `airlock propose`), so agent behavior *and* the gateway's own classification findings are queryable inside the graph.
 - **OpenTelemetry** traces/metrics (optional): decision latency, verdict counts, cache hit rate.
 
 **Operations**

@@ -82,13 +82,16 @@ DATASETS: tuple[Dataset, ...] = (
             Column("user_id", "BIGINT"),
             Column("total", "DOUBLE"),
             Column("status", "VARCHAR"),
+            # Intentionally untagged: a real order-contact phone nobody classified. Coverage flags
+            # it as a suspected gap and `airlock propose` writes the suggestion back to DataHub.
+            Column("customer_phone", "VARCHAR"),
         ),
         rows=(
-            (10, 1, 420.00, "shipped"),
-            (11, 2, 17.50, "shipped"),
-            (12, 1, 99.00, "returned"),
-            (13, 3, 250.75, "shipped"),
-            (14, 4, 8.25, "cancelled"),
+            (10, 1, 420.00, "shipped", "555-100-2001"),
+            (11, 2, 17.50, "shipped", "555-100-2002"),
+            (12, 1, 99.00, "returned", "555-100-2001"),
+            (13, 3, 250.75, "shipped", "555-100-2003"),
+            (14, 4, 8.25, "cancelled", "555-100-2004"),
         ),
     ),
     Dataset(
