@@ -79,7 +79,9 @@ rule) — to call a single function. So Airlock integrates DataHub through the s
 MCP-emit APIs the Kit itself uses, reading five aspect types (schema, tags, glossary terms,
 deprecation, domains, lineage — including `editableSchemaMetadata`) and writing structured
 properties plus an institutional-memory ledger back. That path is the one the quickstart actually
-supports, and it is more robust on OSS than the Kit's own tools.
+supports: it reads `editableSchemaMetadata` (which `get_entities` drops) and writes structured
+properties (which `add_structured_properties` returns a 500 for) — the two OSS gaps that would
+otherwise break the live-retag demo and the write-back.
 
 ## Airlock's own agent surface
 

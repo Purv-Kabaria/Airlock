@@ -4,8 +4,8 @@ Decision overhead (parse + resolve + decide + rewrite) on the benchmark corpus, 
 
 | metric | value |
 |---|---|
-| p50 | 3.356 ms |
-| p95 | 5.093 ms |
-| p99 | 6.544 ms |
-| mean | 3.387 ms |
+| p50 | 3.171 ms |
+| p95 | 4.826 ms |
+| p99 | 5.846 ms |
+| mean | 3.199 ms |
 | budget (p95) | 10.0 ms |
