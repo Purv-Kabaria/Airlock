@@ -32,16 +32,45 @@ from airlock.config import AirlockConfig, load_config
 from airlock.errors import AirlockError, ConfigError, SnapshotUnavailableError
 from airlock.policy.coverage import CoverageReport, DatasetGap
 
-app = typer.Typer(add_completion=False, help="Airlock - the governance gateway for AI agents.")
+app = typer.Typer(
+    add_completion=False,
+    help="Airlock - the governance gateway between AI agents and your SQL warehouse.",
+    no_args_is_help=True,
+)
 policy_app = typer.Typer(help="Validate and inspect policy.")
-app.add_typer(policy_app, name="policy")
+
+# Help panels group commands by the order you actually use them, not by definition order.
+_SETUP = "Set up"
+_INSPECT = "Query & inspect"
+_RUN = "Run the gateway"
+_OBSERVE = "Observe & audit"
+_MAINTAIN = "Maintain the catalog"
+
+app.add_typer(policy_app, name="policy", rich_help_panel=_INSPECT)
 
 err = Console(stderr=True)
 
 _CONFIG_OPT = typer.Option("airlock.yaml", "--config", "-c", help="Path to airlock.yaml.")
 
 
-@app.command()
+def _show_version(value: bool) -> None:
+    if value:
+        from airlock import __version__
+
+        console.print(f"airlock {__version__}")
+        raise typer.Exit(0)
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False, "--version", help="Show version and exit.", is_eager=True, callback=_show_version
+    ),
+) -> None:
+    """Airlock - policy compiled from DataHub, enforced in-flight, explained to the agent."""
+
+
+@app.command(rich_help_panel=_SETUP)
 def init(
     path: Path = typer.Option("airlock.yaml", "--path", "-p", help="Where to write the config."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Accept defaults without prompting."),
@@ -88,7 +117,7 @@ def _report_reachable(datahub_url: str, warehouse_dsn: str) -> None:
         console.print(f"  [yellow]warn[/] DuckDB warehouse not usable at {warehouse_dsn} ({exc})")
 
 
-@app.command()
+@app.command(rich_help_panel=_INSPECT)
 def check(
     sql: str = typer.Argument(..., help="The SQL to evaluate."),
     principal: str = typer.Option("anonymous", "--as", help="Principal to evaluate as."),
@@ -127,7 +156,7 @@ def check(
     _run_async(_run())
 
 
-@app.command()
+@app.command(rich_help_panel=_INSPECT)
 def coverage(
     config: Path = _CONFIG_OPT,
     as_json: bool = typer.Option(False, "--json", help="Print the report as JSON (for scripts)."),
@@ -206,7 +235,7 @@ def _gap_payload(gap: DatasetGap) -> dict[str, str]:
     return {"name": gap.name, "urn": gap.urn, "detail": gap.detail}
 
 
-@app.command()
+@app.command(rich_help_panel=_MAINTAIN)
 def propose(
     config: Path = _CONFIG_OPT,
     dry_run: bool = typer.Option(
@@ -255,7 +284,7 @@ def _proposals_from_gaps(gaps: tuple[Any, ...]) -> dict[str, tuple[str, ...]]:
     return {urn: tuple(values) for urn, values in by_dataset.items()}
 
 
-@app.command()
+@app.command(rich_help_panel=_OBSERVE)
 def usage(
     config: Path = _CONFIG_OPT,
     as_json: bool = typer.Option(False, "--json", help="Print the activity as JSON (for scripts)."),
@@ -302,7 +331,7 @@ def usage(
         render_usage(activity)
 
 
-@app.command()
+@app.command(rich_help_panel=_SETUP)
 def version() -> None:
     """Print Airlock and key dependency versions."""
     from importlib.metadata import version as pkg_version
@@ -312,7 +341,7 @@ def version() -> None:
     console.print(f"airlock {__version__}  (sqlglot {pkg_version('sqlglot')})")
 
 
-@app.command()
+@app.command(rich_help_panel=_RUN)
 def serve(
     config: Path = _CONFIG_OPT,
     principal: str | None = typer.Option(
@@ -352,7 +381,7 @@ def serve(
         err.print("\n[dim]shutting down[/]")
 
 
-@app.command()
+@app.command(rich_help_panel=_OBSERVE)
 def tail(config: Path = _CONFIG_OPT) -> None:
     """Follow the decision stream, colorized, as queries arrive."""
     from airlock.audit.record import AuditRecord
@@ -370,7 +399,7 @@ def tail(config: Path = _CONFIG_OPT) -> None:
         pass
 
 
-@app.command()
+@app.command(rich_help_panel=_OBSERVE)
 def explain(
     request_id: str = typer.Argument(..., help="The request_id to replay."),
     config: Path = _CONFIG_OPT,
@@ -387,7 +416,7 @@ def explain(
     console.print(table)
 
 
-@app.command()
+@app.command(rich_help_panel=_MAINTAIN)
 def refresh(config: Path = _CONFIG_OPT) -> None:
     """Compile a fresh policy snapshot from DataHub and report it."""
     from airlock.policy.compile import compile_snapshot
@@ -403,7 +432,7 @@ def refresh(config: Path = _CONFIG_OPT) -> None:
     )
 
 
-@app.command()
+@app.command(rich_help_panel=_SETUP)
 def doctor(config: Path = typer.Option("airlock.yaml", "--config", "-c")) -> None:
     """Verify the environment item by item and name the fix for anything broken."""
     from airlock.cli.doctor import run_doctor
