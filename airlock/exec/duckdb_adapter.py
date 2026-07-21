@@ -126,10 +126,17 @@ class DuckdbAdapter:
 
     async def _acquire(self) -> duckdb.DuckDBPyConnection:
         await self._sem.acquire()
-        async with self._lock:
-            if self._free:
-                return self._free.pop()
-        conn = await asyncio.to_thread(self._connect)
+        try:
+            async with self._lock:
+                if self._free:
+                    return self._free.pop()
+            conn = await asyncio.to_thread(self._connect)
+        except BaseException:
+            # A failed connect must not leak the permit, or repeated failures during a warehouse
+            # outage exhaust the pool and every later acquire blocks forever - a deadlock that
+            # survives the outage. Release before propagating so the pool self-heals on recovery.
+            self._sem.release()
+            raise
         async with self._lock:
             self._all.append(conn)
         return conn
