@@ -45,9 +45,15 @@ def run_doctor(config_path: Path) -> bool:
     checks.append(_docker())
 
     if cfg is not None:
-        checks.append(_datahub(cfg))
+        datahub = _datahub(cfg)
+        checks.append(datahub)
         checks.append(_warehouse(cfg))
-        checks.append(_snapshot(cfg))
+        # Compiling reads the whole catalog; if the cheap ping already showed DataHub is unreachable,
+        # skip it rather than make the operator wait out the client timeout on a call we know fails.
+        if datahub.ok:
+            checks.append(_snapshot(cfg))
+        else:
+            checks.append(Check("snapshot", False, "skipped - fix DataHub connectivity first"))
         checks.append(_mask_salt(cfg))
 
     _render(checks)

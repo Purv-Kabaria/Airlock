@@ -24,6 +24,12 @@ from airlock.urns import domain_name, glossary_name, tag_name
 
 log = get_logger("airlock.policy.compile")
 
+# Bound the DataHub client so a slow or still-booting GMS fails in seconds, not after the SDK's
+# default 30s read timeout times four retries (~2 min) - which would freeze `airlock doctor`, the
+# one command an operator runs when things are already wrong. One retry absorbs a transient blip.
+_CLIENT_TIMEOUT_SEC = 15.0
+_CLIENT_RETRIES = 1
+
 _LIST_QUERY = """
 query listDatasets($platform: String!, $start: Int!, $count: Int!) {
   search(input: {type: DATASET, query: "*", start: $start, count: $count,
@@ -74,7 +80,12 @@ def compile_snapshot(config: AirlockConfig) -> PolicyGraph:
 
     try:
         client = DataHubGraph(
-            DatahubClientConfig(server=config.datahub.url, token=config.datahub.token)
+            DatahubClientConfig(
+                server=config.datahub.url,
+                token=config.datahub.token,
+                timeout_sec=_CLIENT_TIMEOUT_SEC,
+                retry_max_times=_CLIENT_RETRIES,
+            )
         )
         platform_urn = f"urn:li:dataPlatform:{config.warehouse.kind}"
         urns = _list_dataset_urns(client, platform_urn)
