@@ -85,12 +85,41 @@ def _datahub_failure(exc: Exception) -> str:
     return str(exc).splitlines()[0][:200]
 
 
+class NotDataHubError(RuntimeError):
+    """The URL answered, but the thing answering is not a DataHub GMS."""
+
+
+# GMS `/config` returns a JSON object carrying these; a frontend, a proxy, or an unrelated service
+# on the same port returns HTML or different JSON. Checking identity - not just a 200 - is what
+# stops `doctor` reporting "DataHub reachable" when another service has taken the port.
+_GMS_MARKERS = ("noCode", "versions", "statsCollectionEnabled", "datahub")
+
+
+def _is_gms_config(body: str) -> bool:
+    import json
+
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return False
+    return isinstance(data, dict) and any(k in data for k in _GMS_MARKERS)
+
+
 def ping(config: AirlockConfig, *, timeout: float = 5.0) -> None:
-    """Cheap connectivity check for `airlock doctor` and startup. Raises on failure."""
+    """Cheap connectivity check for `airlock doctor` and startup.
+
+    Raises on an unreachable URL, and `NotDataHubError` when something answers but is not GMS - a
+    200 from an unrelated service on the same port must not read as success.
+    """
     url = config.datahub.url.rstrip("/") + "/config"
     headers = {"Authorization": f"Bearer {config.datahub.token}"} if config.datahub.token else {}
     resp = httpx.get(url, headers=headers, timeout=timeout)
     resp.raise_for_status()
+    if not _is_gms_config(resp.text):
+        raise NotDataHubError(
+            f"{config.datahub.url} answered but is not a DataHub GMS "
+            "(another service may hold this port)"
+        )
 
 
 def compile_snapshot(config: AirlockConfig) -> PolicyGraph:

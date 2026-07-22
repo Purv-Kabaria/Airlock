@@ -135,11 +135,21 @@ def _is_local(url: str) -> bool:
 
 
 def _datahub(cfg: AirlockConfig) -> Check:
-    from airlock.policy.compile import ping
+    from airlock.policy.compile import NotDataHubError, ping
 
     try:
         ping(cfg)
         return Check("datahub", "pass", f"reachable at {cfg.datahub.url}")
+    except NotDataHubError as exc:
+        # Reachable, but the wrong service - a port collision, not a down DataHub. Saying
+        # "unreachable" here would send the operator to restart a stack that is already up.
+        return Check(
+            "datahub",
+            "fail",
+            str(exc),
+            fix="another service holds this port; point datahub.url at DataHub's port, or free it. "
+            "`python demo/up.py` picks a free GMS port automatically.",
+        )
     except Exception as exc:
         fix = (
             "start the stack with `python demo/up.py`"

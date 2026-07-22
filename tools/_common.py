@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 _DEMO_ENV = {
-    "DATAHUB_GMS_URL": "http://localhost:8080",
+    "DATAHUB_GMS_URL": "http://localhost:18080",
     "DATAHUB_GMS_TOKEN": "",
     "WAREHOUSE_DSN": "./demo/warehouse.duckdb",
     "AIRLOCK_KEY_GROWTH": "demo-growth-key",
@@ -27,8 +27,23 @@ _DEMO_ENV = {
 }
 
 
+def _load_demo_env_file() -> None:
+    """Pull demo/.env into the environment if present. up.py writes the GMS port it actually booted
+    there, so a tool run after `up.py` moved GMS off a taken port still targets the right one."""
+    env_file = ROOT / "demo" / ".env"
+    if not env_file.exists():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+
 def load_demo_config():  # type: ignore[no-untyped-def]
     """Load demo/airlock.yaml with demo env defaults (never overriding anything already set)."""
+    _load_demo_env_file()  # the port up.py booted wins over the static default below
     for key, value in _DEMO_ENV.items():
         os.environ.setdefault(key, value)
     from airlock.config import load_config

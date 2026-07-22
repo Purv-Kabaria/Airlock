@@ -193,7 +193,7 @@ def _vocab_mcps() -> list[MetadataChangeProposalWrapper]:
 
 
 def seed() -> None:
-    url = os.environ.get("DATAHUB_GMS_URL", "http://localhost:8080")
+    url = os.environ.get("DATAHUB_GMS_URL", "http://localhost:18080")
     token = os.environ.get("DATAHUB_GMS_TOKEN") or None
     client = DataHubGraph(DatahubClientConfig(server=url, token=token))
 

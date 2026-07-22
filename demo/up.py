@@ -28,12 +28,17 @@ DEMO = ROOT / "demo"
 # reproducible. Override with AIRLOCK_DATAHUB_VERSION to move it forward once upstream is coherent.
 DATAHUB_VERSION = os.environ.get("AIRLOCK_DATAHUB_VERSION", "v1.2.0")
 
+# The demo defaults GMS to 18080, not DataHub's own 8080, because 8080 is one of the most commonly
+# occupied ports on a developer laptop (other stacks, proxies, dashboards). Starting off the busy
+# port avoids a collision on the machine most likely to have one. If 18080 is itself taken, up.py
+# moves to the next free port.
+DEFAULT_GMS_URL = "http://localhost:18080"
+
 
 def main() -> int:
     _force_utf8_io()  # child CLIs (datahub quickstart) print Unicode; Windows cp1252 stdout crashes
     _ensure_interpreter()  # bootstrap deps into .venv on a machine with only Docker + Python
     _load_env()
-    gms = os.environ.get("DATAHUB_GMS_URL", "http://localhost:8080")
 
     if not _docker_ok():
         _fail(
@@ -41,11 +46,19 @@ def main() -> int:
         )
         return 1
 
+    configured = os.environ.get("DATAHUB_GMS_URL", DEFAULT_GMS_URL)
+    gms = _resolve_gms_url(configured)
+    # Every later step - seeding, the printed MCP config, `airlock check` - reads DATAHUB_GMS_URL.
+    # Pin the resolved value into the environment and demo/.env so they all agree on the port we
+    # actually booted, not the default we started from.
+    os.environ["DATAHUB_GMS_URL"] = gms
+    _persist_env("DATAHUB_GMS_URL", gms)
+
     if _gms_healthy(gms):
         print(f"[1/4] DataHub already healthy at {gms} (skipping boot)")
     else:
         print("[1/4] Booting DataHub quickstart (first run pulls images; a few minutes)...")
-        if not _boot_datahub():
+        if not _boot_datahub(_port_of(gms)):
             _fail(
                 "DataHub failed to boot. Run `python demo/reset.py` and try again, or `airlock doctor`."
             )
@@ -147,12 +160,15 @@ def _bootstrap_venv() -> None:
     subprocess.run([_venv_python(), "-m", "pip", "install", "-e", "."], cwd=str(ROOT), check=False)
 
 
-def _boot_datahub() -> bool:
+def _boot_datahub(mapped_gms_port: int) -> bool:
     cmd = [sys.executable, "-m", "datahub", "docker", "quickstart"]
     if DATAHUB_VERSION:
         cmd += ["--version", DATAHUB_VERSION]
+    # The quickstart CLI has no GMS port flag, but the compose file honours this env var
+    # (DATAHUB_GMS_PORT=${DATAHUB_MAPPED_GMS_PORT:-8080}). This is how we move GMS off a taken port.
+    env = {**os.environ, "DATAHUB_MAPPED_GMS_PORT": str(mapped_gms_port)}
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env=env)
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
@@ -168,12 +184,74 @@ def _docker_ok() -> bool:
         return False
 
 
+# GMS `/config` returns a JSON object carrying at least one of these keys. A frontend, a proxy, or
+# an unrelated service that happens to hold the port returns HTML or different JSON - so a bare 200
+# is not proof of DataHub. Without this check up.py "finds" DataHub in whatever answers the port,
+# skips the boot, and then seeds into the wrong service.
+_GMS_MARKERS = ("noCode", "versions", "statsCollectionEnabled", "datahub")
+
+
 def _gms_healthy(gms: str) -> bool:
     try:
         with urllib.request.urlopen(gms.rstrip("/") + "/config", timeout=3) as resp:
-            return resp.status == 200
+            if resp.status != 200:
+                return False
+            body = resp.read(65536).decode("utf-8", "replace")
     except (urllib.error.URLError, OSError):
         return False
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return False
+    return isinstance(data, dict) and any(k in data for k in _GMS_MARKERS)
+
+
+def _port_is_free(port: int) -> bool:
+    """True if nothing is listening on the loopback port.
+
+    Uses connect, not bind. A service listening on 0.0.0.0:PORT is a real collision - Docker will
+    fail to publish there - yet a bind to 127.0.0.1:PORT with SO_REUSEADDR can still succeed, so a
+    bind test reports the port free when it is not. A refused connection is the reliable signal that
+    the port is actually open.
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex(("127.0.0.1", port)) != 0
+
+
+def _port_of(url: str, default: int = 8080) -> int:
+    from urllib.parse import urlparse
+
+    return urlparse(url).port or default
+
+
+def _with_port(url: str, port: int) -> str:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    host = parsed.hostname or "localhost"
+    return f"{parsed.scheme or 'http'}://{host}:{port}"
+
+
+def _resolve_gms_url(configured: str) -> str:
+    """The GMS URL to boot at. Honours an already-healthy DataHub (idempotent re-run), otherwise
+    keeps the configured port when it is free, and moves to the next free port when something else
+    holds it - which is what makes the README's "finds free ports if the defaults are taken" true."""
+    if _gms_healthy(configured):
+        return configured  # ours already; do not move it
+    port = _port_of(configured)
+    if _port_is_free(port):
+        return configured
+    for candidate in range(18080, 18120):
+        if _port_is_free(candidate):
+            moved = _with_port(configured, candidate)
+            print(
+                f"[ports] {configured} is taken by another service; using {moved} for DataHub GMS"
+            )
+            return moved
+    return configured  # nothing free in range; fall through and let the boot surface the collision
 
 
 def _wait_healthy(gms: str, *, timeout: int) -> bool:
@@ -208,8 +286,23 @@ def _load_env() -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
+def _persist_env(key: str, value: str) -> None:
+    """Write key=value into demo/.env, replacing any existing line for that key.
+
+    So that `airlock check`, `serve`, and `record.py` - which autoload demo/.env - use the port
+    up.py actually booted, not the default in .env.example. Kept out of Git via .gitignore.
+    """
+    env_file = DEMO / ".env"
+    lines = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
+    kept = [ln for ln in lines if not ln.strip().startswith(f"{key}=")]
+    kept.append(f"{key}={value}")
+    env_file.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+
 def _print_next_steps(gms: str) -> None:
-    ui = gms.replace(":8080", ":9002")
+    # The frontend UI runs on 9002 regardless of the GMS port; derive it from the GMS host, not by
+    # rewriting a port that may no longer be 8080.
+    ui = _with_port(gms, 9002)
     env_keys = (
         "DATAHUB_GMS_URL",
         "DATAHUB_GMS_TOKEN",

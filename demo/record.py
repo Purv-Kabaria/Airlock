@@ -1,10 +1,14 @@
 """Self-running demo for the submission video. Screen-record this in one hands-free take.
 
 It plays the exact sequence from SCRIPT.md against the live stack `python demo/up.py` starts -
-cold open, a clean query, lineage substitution, the live retag, write-back, and the coverage
-close - with large captions and pauses sized for a voiceover. Nothing here is mocked: every beat
-shells out to the real `airlock` CLI or writes a real tag to the real DataHub, exactly as a data
-steward's UI click would.
+cold open, a clean query, lineage substitution, inherited classification, the live retag,
+write-back, and the coverage close - with large captions and pauses sized for a voiceover.
+
+Nothing here is mocked, and nothing is replayed. Every beat shells out to the real `airlock` CLI,
+writes a real tag to the real DataHub exactly as a steward's UI click would, or executes real SQL
+against the real warehouse. The write-back beat runs its two queries through `Gateway.build` -
+the same wiring `airlock serve` uses - so the properties it then reads out of DataHub were written
+by those queries seconds earlier, not left over from an earlier session.
 
     python demo/record.py            # presentation timing (~2:45), for recording
     python demo/record.py --rehearse # short pauses, and every beat is checked; exits non-zero on
@@ -36,7 +40,7 @@ from rich.text import Text
 
 REPO = Path(__file__).resolve().parent.parent
 CONFIG = "demo/airlock.yaml"
-GMS = os.environ.get("DATAHUB_GMS_URL", "http://localhost:8080")
+GMS = os.environ.get("DATAHUB_GMS_URL", "http://localhost:18080")
 ORDERS_URN = "urn:li:dataset:(urn:li:dataPlatform:duckdb,orders,PROD)"
 DIM_USERS_URN = "urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
 
@@ -211,6 +215,39 @@ def _guard(what: str, action: Callable[[], None]) -> None:
         console.print(f"[bold red]could not {what}[/] - [dim]{type(exc).__name__}[/]")
 
 
+def execute_through_gateway(queries: list[tuple[str, str]]) -> None:
+    """Run queries through the real gateway, executed rather than dry-run.
+
+    Every other beat uses `airlock check`, which decides without executing and so writes nothing
+    back. If the write-back beat read the catalog after only dry-runs it would show whatever an
+    earlier session left behind - stale numbers presented as this run's. These go through
+    `Gateway.build`, the same wiring `airlock serve` uses with the DataHub sink attached, against
+    the real DuckDB warehouse; `aclose` drains the write-back queue before the properties are read
+    back, so what appears on screen was produced seconds earlier by the queries just shown.
+    """
+    import asyncio
+
+    from airlock.config import load_config
+    from airlock.gateway import Gateway
+
+    async def _run() -> None:
+        gateway = Gateway.build(load_config(REPO / "demo" / "airlock.yaml"))
+        await gateway.bootstrap()
+        try:
+            for sql, principal in queries:
+                envelope = await gateway.run_query(sql, principal)
+                rows = "-" if envelope.rows is None else str(len(envelope.rows))
+                console.print(
+                    f"  [bold]{principal}[/] [dim]{sql}[/]\n"
+                    f"    -> [cyan]{envelope.status}[/]  rows={rows}  "
+                    f"verdicts={', '.join(v.code for v in envelope.verdicts) or '-'}"
+                )
+        finally:
+            await gateway.aclose()  # drains the queued write-back to DataHub
+
+    asyncio.run(_run())
+
+
 def restore_status_tag() -> None:
     """Undo the retag so a second run starts from the same catalog.
 
@@ -381,7 +418,19 @@ def _play(pace: Pacer) -> None:
         expect=("AIRLOCK-201", "AIRLOCK-110", "AIRLOCK-120"),
         beat="1:00 deprecated table substituted via lineage",
     )
-    pace.beat(16)
+    pace.beat(14)
+
+    caption(
+        "1:20  Lineage protects what nobody tagged",
+        "user_report.contact carries no tag at all. DataHub's column lineage says it derives",
+        "from dim_users.email - so it inherits the mask. The leak nobody remembers to close.",
+    )
+    run_airlock(
+        ["check", "SELECT user_id, contact, signup_month FROM user_report", "--as", "growth-agent"],
+        expect=("AIRLOCK-113",),
+        beat="1:20 untagged column masked by inherited classification",
+    )
+    pace.beat(14)
 
     caption(
         "1:25  The live retag  (the centerpiece)",
@@ -419,14 +468,28 @@ def _play(pace: Pacer) -> None:
         beat="1:25 retag, after - status masked by the new tag",
     )
     pace.beat(12)
+    # Put the catalog back now, so the beats that follow read the same state a first-time viewer's
+    # would. The `finally` in main() repeats this; removing an absent tag is a no-op, and a restore
+    # that only runs at the end would leave every later beat looking at a catalog the demo edited.
+    restore_status_tag()
 
     caption(
         "2:10  Write-back closes the loop",
-        "Every decision writes back to DataHub: last access, the snapshot hash that made it,",
-        "a denied-attempts counter. Governance queries what agents did where they already look.",
+        "Two real queries, executed against the warehouse - one allowed, one denied.",
+        "Then read their fingerprint back out of DataHub itself.",
     )
+    _guard(
+        "execute the agent's queries for real",
+        lambda: execute_through_gateway(
+            [
+                ("SELECT name, email, phone, ssn FROM dim_users", "growth-agent"),
+                ("SELECT name FROM dim_users WHERE email = 'ada@corp.com'", "growth-agent"),
+            ]
+        ),
+    )
+    pace.beat(4)
     _guard("read the write-back back out of DataHub", show_writeback)
-    pace.beat(14)
+    pace.beat(12)
 
     caption(
         "2:30  It finds its own blind spots - and fixes them",
