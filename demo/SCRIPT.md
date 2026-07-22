@@ -3,10 +3,19 @@
 Two ways to record. **Hands-free (recommended):** `python demo/record.py` plays the whole sequence
 below against the live stack with captions and pauses — you screen-record one take and read the
 word-for-word voiceover in [`VIDEO.md`](VIDEO.md) over it. No typing on camera, no typos, no timing
-risk. The retag flips `orders.status` automatically and restores it, so the run is idempotent. Use
-`--rehearse` first to confirm every beat. **Manual:** drive the terminal and the DataHub UI yourself
-with the shot list below — the only reason to do this is to click the retag in the real UI on camera,
-which is marginally more convincing than the automated tag write.
+risk. **Manual:** drive the terminal and the DataHub UI yourself with the shot list below — the only
+reason to do this is to click the retag in the real UI on camera, which is marginally more convincing
+than the automated tag write.
+
+Three things the player does so a take cannot be wasted:
+
+- **Preflight.** It runs `airlock doctor --json` before anything else and refuses to start if a
+  check is failing, naming the fix. A stack that is not ready costs you a re-run, not a take.
+- **`--rehearse` is a real gate,** not just faster playback. Every decision beat is re-run with
+  `--json` and checked against the reason codes its narration promises; the run exits non-zero and
+  lists any beat that no longer holds. `make rehearse` until it passes, then `make demo`.
+- **The retag always comes off.** `orders.status` is restored from a `finally`, so a run that dies
+  midway still leaves the catalog as it found it and the next take opens on the same before-state.
 
 Two documents in one. **Part A** is the recording shot list, timed to 2:55 against the hard
 3:00 limit. **Part B** is the unscripted rehearsal — run it before recording, and hand it to anyone
@@ -185,6 +194,7 @@ per-dataset, per-agent, per-column counts show up here and on each dataset's Sta
 
 ### Green-light checklist
 
+- [ ] `make rehearse` exits 0 — every beat produced the verdicts the narration claims
 - [ ] `python tools/judge.py` passes — zero tracebacks
 - [ ] `make eval` passes — including the deny-then-reformulate case
 - [ ] `airlock coverage` output matches what the video claims

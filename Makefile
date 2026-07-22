@@ -5,7 +5,7 @@
 # `bench`, `eval`, `judge`, and `examples` targets run against the REAL stack and need `make up`
 # first (a live DataHub + DuckDB); `make integration` runs them together.
 
-.PHONY: install test unit lint fmt typecheck edges examples bench judge eval load up reset all ci integration
+.PHONY: install test unit lint fmt typecheck edges examples bench judge eval load up reset all ci integration rehearse demo
 
 install:
 	uv sync --extra dev
@@ -48,6 +48,15 @@ up:
 
 reset:
 	python demo/reset.py
+
+# The recording. `rehearse` is the green light: it plays every beat fast, checks each one produced
+# the reason codes the script claims, and exits non-zero if any did. Run it until it passes, then
+# run `demo` and screen-record that take.
+rehearse:
+	python demo/record.py --rehearse
+
+demo:
+	python demo/record.py
 
 # Fast lane: no external services. This is what the CI unit matrix runs on every commit.
 ci: lint typecheck unit edges
