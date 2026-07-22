@@ -68,3 +68,31 @@ def test_hash_salt_with_apostrophe_stays_a_single_literal() -> None:
     value = con.execute(f"SELECT {e} FROM t").fetchone()[0]
     assert verify_value("hash", value)
     assert verify_value("null", None)
+
+
+def test_partial_phone_redacts_short_values_whole() -> None:
+    # RIGHT(x, 4) returns the entire value when the value is four characters or fewer, so without
+    # a length guard the strategy stops masking exactly the values it most needs to.
+    con = duckdb.connect()
+    for raw, expected in [("5551234567", "***-4567"), ("12.5", "***"), ("hello", "***")]:
+        sql = mask_expression("partial_phone", exp.column("c"), dialect="duckdb", salt="s").sql(
+            dialect="duckdb"
+        )
+        got = con.execute(f"SELECT {sql} FROM (SELECT '{raw}' AS c)").fetchone()[0]
+        assert got == expected
+        assert verify_value("partial_phone", got)
+    con.close()
+
+
+@pytest.mark.parametrize("dtype", ["VARCHAR", "BIGINT", "DOUBLE"])
+def test_generalize_date_degrades_on_non_temporal_column(dtype) -> None:
+    # DATE_TRUNC cannot bind against these, and a strategy typo in airlock.yaml must not turn into
+    # a failing query on every read of the column. hash is at least as private.
+    assert resolve_strategy("generalize_date", column_name="c", data_type=dtype) == "hash"
+
+
+@pytest.mark.parametrize("dtype", ["DATE", "TIMESTAMP"])
+def test_generalize_date_kept_on_temporal_column(dtype) -> None:
+    assert (
+        resolve_strategy("generalize_date", column_name="c", data_type=dtype) == "generalize_date"
+    )

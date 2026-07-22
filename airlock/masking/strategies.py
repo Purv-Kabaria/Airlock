@@ -21,7 +21,13 @@ _TEMPLATES: dict[str, str] = {
     "null": "NULL",
     "hash": "MD5('{salt}' || CAST({col} AS VARCHAR))",
     "partial_email": "SUBSTR(CAST({col} AS VARCHAR), 1, 1) || '***@' || SPLIT_PART(CAST({col} AS VARCHAR), '@', 2)",
-    "partial_phone": "'***-' || RIGHT(CAST({col} AS VARCHAR), 4)",
+    # The length guard is load-bearing: RIGHT(x, 4) on a value of four characters or fewer returns
+    # the whole value, so without it the strategy stops masking exactly when the data is shortest.
+    # Below a real phone number's length there is nothing safe to reveal, so reveal nothing.
+    "partial_phone": (
+        "CASE WHEN LENGTH(CAST({col} AS VARCHAR)) >= 7 "
+        "THEN '***-' || RIGHT(CAST({col} AS VARCHAR), 4) ELSE '***' END"
+    ),
     "generalize_date": "DATE_TRUNC('month', {col})",
     "fixed_string": "'***'",
 }
@@ -39,18 +45,33 @@ _HINTS: dict[str, str] = {
 AUTO_ALIASES = frozenset({"auto", "partial"})
 
 
+def _is_temporal(data_type: str) -> bool:
+    return any(t in data_type.upper() for t in ("DATE", "TIME"))
+
+
 def resolve_strategy(spec_strategy: str, *, column_name: str, data_type: str) -> str:
-    """Concrete strategy name for a column. Explicit names pass through; `auto`/`partial` infer."""
+    """Concrete strategy name for a column. Explicit names pass through; `auto`/`partial` infer.
+
+    An explicit strategy the column's type cannot support degrades to `hash` rather than emitting
+    SQL the warehouse will reject. `hash` is at least as private as anything it replaces, so the
+    degrade never weakens a policy — and one wrong strategy in airlock.yaml costs a coarser mask
+    instead of failing every read of that column. The name returned here is the one the verdict
+    reports, so the envelope always names the mask that actually ran.
+    """
     if spec_strategy not in AUTO_ALIASES:
         if spec_strategy not in _TEMPLATES:
             raise ValueError(f"unknown masking strategy {spec_strategy!r}")
+        # DATE_TRUNC does not bind against a non-temporal column. Every other template casts to
+        # VARCHAR first, so this is the only strategy with a type precondition.
+        if spec_strategy == "generalize_date" and not _is_temporal(data_type):
+            return "hash"
         return spec_strategy
     name = column_name.lower()
     if "email" in name:
         return "partial_email"
     if "phone" in name or name.endswith("_tel"):
         return "partial_phone"
-    if any(t in data_type.upper() for t in ("DATE", "TIME")):
+    if _is_temporal(data_type):
         return "generalize_date"
     return "hash"
 
@@ -89,7 +110,7 @@ def verify_value(strategy: str, value: object) -> bool:
     if strategy == "partial_email":
         return "***" in text
     if strategy == "partial_phone":
-        return text.startswith("***-")
+        return text.startswith("***-") or text == "***"  # short values redact whole
     if strategy == "fixed_string":
         return text == "***"
     return True  # generalize_date and unknown strategies have no cheap shape to assert
