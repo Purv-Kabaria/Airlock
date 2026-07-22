@@ -407,7 +407,7 @@ class Gateway:
 
         if statement_is_denied(verdicts):
             return Plan(
-                verdicts=tuple(verdicts),
+                verdicts=tuple(_without_limit(verdicts)),
                 dataset_urns=dataset_urns,
                 row_limit=row_limit,
                 timeout=timeout,
@@ -586,6 +586,16 @@ class Gateway:
         await self._adapter.close()
         for sink in self._sinks:
             await sink.close()
+
+
+def _without_limit(verdicts: list[Verdict]) -> list[Verdict]:
+    """Drop the row-limit note from a denied plan.
+
+    The limit verdict describes something the rewriter is about to do. On a denied statement the
+    rewriter never runs, so "a row limit of 10000 was applied" is describing an event that did not
+    happen - noise the agent has to reason past on the one response where it can least afford to.
+    """
+    return [v for v in verdicts if v.action != "limit"]
 
 
 def _column_reads(resolved: ResolvedQuery) -> tuple[tuple[str, str], ...]:

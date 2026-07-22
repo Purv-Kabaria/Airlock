@@ -216,3 +216,23 @@ async def test_offline_bootstrap_uses_cached_snapshot(tmp_path, warehouse) -> No
     env = gateway.dry_run("SELECT email FROM dim_users", "growth-agent")
     await gateway.aclose()
     assert any(v.code == "AIRLOCK-110" for v in env.verdicts)
+
+
+async def test_denied_envelope_does_not_claim_a_row_limit_was_applied(tmp_path, warehouse) -> None:
+    # The limit verdict describes what the rewriter is about to do. A denied statement never
+    # reaches the rewriter, so reporting it would describe an event that did not happen - on the
+    # one response the agent most needs to read cleanly.
+    gateway, _ = _gateway(tmp_path, warehouse)
+    env = await gateway.run_query(
+        "SELECT name FROM dim_users WHERE ssn = '111-22-3333'", "growth-agent"
+    )
+    await gateway.aclose()
+    assert env.status is EnvelopeStatus.DENIED
+    assert [v.action for v in env.verdicts] == ["deny_statement"]
+
+
+async def test_executed_envelope_still_reports_the_row_limit(tmp_path, warehouse) -> None:
+    gateway, _ = _gateway(tmp_path, warehouse)
+    env = await gateway.run_query("SELECT name FROM dim_users", "growth-agent")
+    await gateway.aclose()
+    assert any(v.action == "limit" for v in env.verdicts)
