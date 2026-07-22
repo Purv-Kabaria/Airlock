@@ -28,7 +28,7 @@ from airlock.cli.render import (
     render_proposals,
     render_usage,
 )
-from airlock.config import AirlockConfig, load_config
+from airlock.config import AirlockConfig, autoload_env, load_config
 from airlock.errors import AirlockError, ConfigError, SnapshotUnavailableError
 from airlock.policy.coverage import CoverageReport, DatasetGap
 
@@ -445,11 +445,14 @@ def refresh(config: Path = _CONFIG_OPT) -> None:
 
 
 @app.command(rich_help_panel=_SETUP)
-def doctor(config: Path = typer.Option("airlock.yaml", "--config", "-c")) -> None:
+def doctor(
+    config: Path = typer.Option("airlock.yaml", "--config", "-c"),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable report for CI."),
+) -> None:
     """Verify the environment item by item and name the fix for anything broken."""
     from airlock.cli.doctor import run_doctor
 
-    ok = run_doctor(config)
+    ok = run_doctor(config, as_json=as_json)
     raise typer.Exit(0 if ok else 1)
 
 
@@ -493,31 +496,12 @@ def policy_diff(
 
 
 def _load(config: Path) -> AirlockConfig:
-    _autoload_env(config)
+    autoload_env(config)
     try:
         return load_config(config)
     except ConfigError as exc:
         err.print(f"[red]config error:[/] {exc}")
         raise typer.Exit(2) from exc
-
-
-def _autoload_env(config: Path) -> None:
-    """Load `.env` (then `.env.example`) from the config's directory and the CWD, without overriding
-    anything already set. This makes the demo commands work in a fresh shell right after up.py, so a
-    judge can copy-paste `airlock check ... -c demo/airlock.yaml` and it just runs."""
-    seen: set[Path] = set()
-    for base in (config.resolve().parent, Path.cwd()):
-        for name in (".env", ".env.example"):
-            path = base / name
-            if path in seen or not path.exists():
-                continue
-            seen.add(path)
-            for line in path.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                os.environ.setdefault(key.strip(), value.strip())
 
 
 def _run_async(coro: Coroutine[Any, Any, None]) -> None:

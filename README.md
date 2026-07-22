@@ -101,7 +101,7 @@ git clone https://github.com/Purv-Kabaria/Airlock && cd Airlock
 python demo/up.py       # one launcher, every OS; ~3 minutes on first run
 ```
 
-`up.py` is safe to run twice (fully idempotent), checks that Docker is actually up before doing anything, finds free ports if the defaults are taken, and prints exactly what to do next. When something in your environment is off, `airlock doctor` walks the whole checklist — Python version, Docker daemon, ports, DataHub reachability, warehouse driver — pass/fail with the fix for each. `python demo/reset.py` returns everything to a clean slate.
+`up.py` is safe to run twice (fully idempotent), checks that Docker is actually up before doing anything, finds free ports if the defaults are taken, and prints exactly what to do next. When something in your environment is off, `airlock doctor` walks the whole checklist — Python, config, Docker daemon, DataHub reachability, warehouse connectivity, snapshot compile, masking salt — and prints the fix beneath anything that failed, then one line naming what to do first. It runs every check every time, so you fix the list once instead of rediscovering it one re-run at a time; checks that can't run yet say why rather than disappearing. Docker is skipped outright when your config points at a remote DataHub, because then you don't need it. `--json` gives CI the same report. `python demo/reset.py` returns everything to a clean slate.
 
 Then point your MCP client at it (Claude Desktop shown):
 

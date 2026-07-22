@@ -322,6 +322,30 @@ def _resolve_env(node: Any, *, path: str = "") -> Any:
     return node
 
 
+def autoload_env(config: str | Path) -> None:
+    """Load `.env`, then `.env.example`, from the config's directory and the CWD, without overriding
+    anything already set.
+
+    Every command that reads a config calls this first, so `${DATAHUB_GMS_URL}` resolves in a fresh
+    shell right after `up.py`. It has to be shared rather than per-command: a diagnostic that
+    resolves config differently from the commands it is diagnosing reports failures nobody else
+    sees, which is worse than not running at all.
+    """
+    seen: set[Path] = set()
+    for base in (Path(config).resolve().parent, Path.cwd()):
+        for name in (".env", ".env.example"):
+            path = base / name
+            if path in seen or not path.exists():
+                continue
+            seen.add(path)
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                os.environ.setdefault(key.strip(), value.strip())
+
+
 def load_config(path: str | Path) -> AirlockConfig:
     """Load, env-resolve, and validate airlock.yaml. Raises ConfigError on any problem."""
     p = Path(path)
