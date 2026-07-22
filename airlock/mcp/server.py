@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import Literal
+from typing import Any, Literal
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.session import ServerSession
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel
 
@@ -22,12 +23,17 @@ from airlock.engine.verdicts import Envelope, ReasonCode, Subject, Verdict
 from airlock.errors import AirlockError
 from airlock.gateway import Gateway, new_request_id
 from airlock.logging import get_logger
+from airlock.mcp.auth import ANONYMOUS, principal_from_headers
 from airlock.mcp.health import start_health_server
 from airlock.policy.graph import ColumnFact, DatasetFacts, PolicyGraph, Principal
 
 log = get_logger("airlock.mcp.server")
 
 _READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+
+# FastMCP injects this per call and keeps it out of the tool's input schema. The lifespan and
+# request payloads are the SDK's to shape, so only the session type is worth pinning.
+ToolContext = Context[ServerSession, Any, Any]
 
 
 class ColumnInfo(BaseModel):
@@ -84,7 +90,28 @@ def _describe_note(masked: int, denied: int) -> str | None:
     return f"{', '.join(parts)} when queried; select only what you need."
 
 
-def build_mcp(gateway: Gateway, principal_name: str) -> FastMCP:
+def build_mcp(
+    gateway: Gateway, principal_name: str, config: AirlockConfig | None = None
+) -> FastMCP:
+    """Build the tool surface. `config` turns on per-request key auth, which HTTP transport
+    requires because one process serves many clients; stdio passes None and pins `principal_name`,
+    since there the client owns the process and the process boundary is the identity boundary."""
+
+    def principal_for(ctx: ToolContext) -> str:
+        if config is None:
+            return principal_name
+        try:
+            request = ctx.request_context.request
+        except ValueError:  # raised by the SDK when there is no request in scope
+            request = None
+        if request is None:
+            # Per-request auth is on but this call carries nothing to authenticate with. Fall back
+            # to deny-all, never to the startup principal: on a shared gateway that is some other
+            # agent's scope.
+            log.warning("auth.no_request_context")
+            return ANONYMOUS
+        return principal_from_headers(config, request.headers)
+
     mcp = FastMCP(
         name="airlock-warehouse",
         instructions=(
@@ -110,7 +137,8 @@ def build_mcp(gateway: Gateway, principal_name: str) -> FastMCP:
         annotations=_READ_ONLY,
         structured_output=True,
     )
-    async def warehouse_run_query(sql: str) -> Envelope:
+    async def warehouse_run_query(sql: str, ctx: ToolContext) -> Envelope:
+        principal_name = principal_for(ctx)
         try:
             return await gateway.run_query(sql, principal_name)
         except AirlockError as exc:
@@ -150,7 +178,8 @@ def build_mcp(gateway: Gateway, principal_name: str) -> FastMCP:
         annotations=_READ_ONLY,
         structured_output=True,
     )
-    async def warehouse_list_tables() -> TablesResult:
+    async def warehouse_list_tables(ctx: ToolContext) -> TablesResult:
+        principal_name = principal_for(ctx)
         tables = gateway.visible_tables(principal_name)
         return TablesResult(
             principal=principal_name,
@@ -171,7 +200,8 @@ def build_mcp(gateway: Gateway, principal_name: str) -> FastMCP:
         annotations=_READ_ONLY,
         structured_output=True,
     )
-    async def warehouse_describe_table(name: str) -> DescribeResult:
+    async def warehouse_describe_table(name: str, ctx: ToolContext) -> DescribeResult:
+        principal_name = principal_for(ctx)
         # Pin one snapshot for the whole call so a concurrent refresh cannot make the scope check
         # and the lookup disagree.
         graph = gateway.snapshot()
@@ -214,7 +244,9 @@ async def run_server(
     gateway = Gateway.build(config)
     await gateway.bootstrap()
     refresh_task = asyncio.create_task(gateway.refresh_loop())
-    mcp = build_mcp(gateway, principal_name)
+    # Over HTTP one process serves many clients, so each call authenticates itself; over stdio the
+    # client owns the process and the principal is the one resolved at startup.
+    mcp = build_mcp(gateway, principal_name, config if transport == "http" else None)
     health_server = None
 
     try:

@@ -361,8 +361,20 @@ def serve(
 
     cfg = _load(config)
     key = os.environ.get(key_env) if key_env else None
+    if transport == "http" and (principal or key_env):
+        # One HTTP process serves many clients. Honouring a startup principal here would give every
+        # agent that connects the same scope - the over-permissioned credential Airlock exists to
+        # remove - so refuse rather than quietly ignore the flag.
+        err.print(
+            "[red]--principal/--key-env are stdio-only.[/] Over http each request authenticates "
+            "itself: send the agent's key as the [cyan]X-Airlock-Key[/] header. Re-run without the flag."
+        )
+        raise typer.Exit(2)
     principal_name = resolve_principal_name(cfg, principal=principal, key=key)
-    err.print(f"[bold]airlock[/] serving as [cyan]{principal_name}[/] over {transport}")
+    if transport == "http":
+        err.print("[bold]airlock[/] serving over http; principal per request via X-Airlock-Key")
+    else:
+        err.print(f"[bold]airlock[/] serving as [cyan]{principal_name}[/] over stdio")
     try:
         asyncio.run(
             run_server(
