@@ -287,13 +287,21 @@ def _load_env() -> None:
 
 
 def _persist_env(key: str, value: str) -> None:
-    """Write key=value into demo/.env, replacing any existing line for that key.
+    """Set key=value in demo/.env, replacing any existing line for that key.
 
     So that `airlock check`, `serve`, and `record.py` - which autoload demo/.env - use the port
     up.py actually booted, not the default in .env.example. Kept out of Git via .gitignore.
+
+    When demo/.env does not exist yet it is seeded from .env.example first, so the file stays
+    complete. Several loaders read demo/.env and stop - they never fall through to .env.example -
+    so a file holding only this one key would shadow the token and every other value.
     """
     env_file = DEMO / ".env"
-    lines = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
+    if env_file.exists():
+        lines = env_file.read_text(encoding="utf-8").splitlines()
+    else:
+        example = DEMO / ".env.example"
+        lines = example.read_text(encoding="utf-8").splitlines() if example.exists() else []
     kept = [ln for ln in lines if not ln.strip().startswith(f"{key}=")]
     kept.append(f"{key}={value}")
     env_file.write_text("\n".join(kept) + "\n", encoding="utf-8")

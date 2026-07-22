@@ -100,6 +100,22 @@ def test_persist_env_replaces_only_its_key(up, tmp_path, monkeypatch) -> None:
     assert written.count("DATAHUB_GMS_URL=") == 1  # replaced, not appended
 
 
+def test_persist_env_seeds_a_missing_file_from_the_example(up, tmp_path, monkeypatch) -> None:
+    # The bug this pins: a demo/.env holding only the URL shadows the token for every loader that
+    # reads .env and stops. A newly-written .env must carry the full set.
+    (tmp_path / ".env.example").write_text(
+        "DATAHUB_GMS_URL=http://localhost:8080\nDATAHUB_GMS_TOKEN=demo\nAIRLOCK_KEY_GROWTH=g\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(up, "DEMO", tmp_path)
+    up._persist_env("DATAHUB_GMS_URL", "http://localhost:18080")
+    written = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "DATAHUB_GMS_TOKEN=demo" in written  # carried over from the example
+    assert "AIRLOCK_KEY_GROWTH=g" in written
+    assert "DATAHUB_GMS_URL=http://localhost:18080" in written
+    assert written.count("DATAHUB_GMS_URL=") == 1
+
+
 def test_gms_health_rejects_a_non_datahub_service(up, monkeypatch) -> None:
     # SigNoz (or any service) answering 200 with HTML on the port must not read as a healthy GMS,
     # or up.py skips the boot and seeds into the wrong service.
