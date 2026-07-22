@@ -145,3 +145,45 @@ def test_a_lineage_governed_column_is_not_a_coverage_gap() -> None:
     # raw.email + raw.ssn (direct) and summary.contact + summary.national_id (propagated) = 4.
     assert report.governed_columns == 4
     assert all("contact" not in g.column for g in report.suspected_gaps)
+
+
+def test_column_lineage_survives_the_snapshot_round_trip(tmp_path) -> None:
+    """A restored snapshot must decide exactly as strictly as the one it was saved from.
+
+    Only `lineage.downstream` used to be persisted, so a graph rebuilt from disk had no column-level
+    edges. Classification propagation then stopped firing and a derived PII column came back in the
+    clear -- on the stale-serving path, which is precisely when nobody is watching.
+    """
+    from airlock.policy.store import SnapshotStore
+
+    graph = _graph()
+    store = SnapshotStore(str(tmp_path / "snap.sqlite"))
+    store.install(graph)
+
+    persisted = store.persisted_catalog()
+    assert persisted is not None
+    assert dict(persisted.column_lineage) == dict(graph.lineage.column_upstreams)
+    assert persisted.column_lineage, "fixture must carry column lineage for this to prove anything"
+
+
+def test_a_snapshot_written_before_column_lineage_still_loads(tmp_path) -> None:
+    # Forward compatibility: an older payload has no such key and must not fail the whole catalog.
+    import json
+    import sqlite3
+
+    from airlock.policy.store import SnapshotStore
+
+    path = tmp_path / "old.sqlite"
+    store = SnapshotStore(str(path))
+    store.install(_graph())
+    with sqlite3.connect(path) as conn:
+        (payload,) = conn.execute("SELECT payload FROM snapshots").fetchone()
+        data = json.loads(payload)
+        del data["column_lineage"]
+        conn.execute("UPDATE snapshots SET payload = ?", (json.dumps(data),))
+        conn.commit()
+
+    restored = SnapshotStore(str(path)).persisted_catalog()
+    assert restored is not None
+    assert restored.column_lineage == {}
+    assert restored.datasets  # the rest of the catalog is intact

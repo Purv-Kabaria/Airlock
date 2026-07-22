@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +29,10 @@ class PersistedCatalog:
     lineage: dict[str, tuple[str, ...]]
     compiled_at: datetime
     source_url: str
+    # Column-level edges must survive the round trip with everything else. They carry classification
+    # propagation, so a snapshot restored without them decides *less strictly* than the one it was
+    # saved from - a column masked live comes back in the clear on the stale path.
+    column_lineage: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 class SnapshotStore:
@@ -58,11 +62,15 @@ class SnapshotStore:
         data = json.loads(payload)
         datasets = {urn: _dataset_from_json(d) for urn, d in data["datasets"].items()}
         lineage = {k: tuple(v) for k, v in data["lineage"].items()}
+        # Snapshots written before column lineage was persisted have no such key; treat them as
+        # having none rather than failing to load a catalog that is otherwise usable.
+        column_lineage = {k: tuple(v) for k, v in data.get("column_lineage", {}).items()}
         return PersistedCatalog(
             datasets=datasets,
             lineage=lineage,
             compiled_at=datetime.fromisoformat(compiled_at),
             source_url=source_url,
+            column_lineage=column_lineage,
         )
 
     def _persist(self, graph: PolicyGraph) -> None:
@@ -70,6 +78,7 @@ class SnapshotStore:
             {
                 "datasets": {urn: _dataset_to_json(ds) for urn, ds in graph.datasets.items()},
                 "lineage": {k: list(v) for k, v in graph.lineage.downstream.items()},
+                "column_lineage": {k: list(v) for k, v in graph.lineage.column_upstreams.items()},
             },
             separators=(",", ":"),
         )

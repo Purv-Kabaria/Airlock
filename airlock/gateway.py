@@ -163,6 +163,9 @@ class Gateway:
             principals=self._config.compiled_principals(),
             compiled_at=persisted.compiled_at,
             source_url=persisted.source_url,
+            # Without this the restored graph carries no column-level edges, so classification
+            # propagation stops firing and the stale path serves a derived PII column in the clear.
+            column_lineage=dict(persisted.column_lineage),
         )
 
     async def refresh_loop(self) -> None:
