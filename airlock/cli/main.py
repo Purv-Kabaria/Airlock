@@ -17,7 +17,6 @@ from typing import Any
 
 import typer
 from rich.console import Console
-from rich.table import Table
 
 import airlock.cli._encoding  # noqa: F401  side effect: UTF-8 stdout/stderr, before any Console
 from airlock.cli.render import (
@@ -26,6 +25,7 @@ from airlock.cli.render import (
     render_coverage,
     render_envelope,
     render_proposals,
+    render_replay,
     render_usage,
 )
 from airlock.config import AirlockConfig, autoload_env, load_config
@@ -134,6 +134,13 @@ def check(
         err.print(
             f"[yellow]warning:[/] principal {principal!r} is not defined in {config}; "
             f"evaluating as the anonymous (deny-all) principal. Known: {sorted(known) or '[none]'}"
+        )
+    elif principal == "anonymous" and known:
+        # The verdict's own hint is written for an agent holding a key. At this surface the fix is
+        # a flag, and the names are already in the config the user just pointed us at.
+        err.print(
+            "[dim]note:[/] no --as given, so this evaluates as the anonymous (deny-all) principal "
+            f"and every query is denied. Known principals: {', '.join(sorted(known))}"
         )
 
     async def _run() -> None:
@@ -415,17 +422,21 @@ def tail(config: Path = _CONFIG_OPT) -> None:
 def explain(
     request_id: str = typer.Argument(..., help="The request_id to replay."),
     config: Path = _CONFIG_OPT,
+    as_json: bool = typer.Option(False, "--json", help="Print the raw audit record."),
 ) -> None:
     """Replay a past decision from the audit log."""
     cfg = _load(config)
     record = _find_record(cfg.audit.jsonl, request_id)
     if record is None:
-        err.print(f"[red]no audit record for {request_id}[/]")
+        err.print(
+            f"[red]no audit record for {request_id}[/] in {cfg.audit.jsonl}\n"
+            "[dim]check the id, or run `airlock tail` to watch decisions as they arrive.[/]"
+        )
         raise typer.Exit(1)
-    table = Table(show_header=False, box=None)
-    for k, v in record.items():
-        table.add_row(f"[bold]{k}[/]", json.dumps(v) if not isinstance(v, str) else v)
-    console.print(table)
+    if as_json:
+        print(json.dumps(record, indent=2))
+    else:
+        render_replay(record)
 
 
 @app.command(rich_help_panel=_MAINTAIN)

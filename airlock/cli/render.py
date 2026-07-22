@@ -215,3 +215,80 @@ def _cell(value: Any) -> str:
     if value is None:
         return "[dim]NULL[/]"
     return str(value)
+
+
+def render_replay(record: dict[str, Any]) -> None:
+    """The human view of one archived decision, shaped like `check` so a replay reads the same as
+    the live decision did.
+
+    The audit line stores each verdict's code, action, and subject but not its prose - the reason
+    sentence is rebuilt per request and would triple the size of every line. The code is the stable
+    identity, so the meaning comes from the TITLES table instead of the record.
+    """
+    status = str(record.get("status", "unknown"))
+    known = _status_enum(status)
+    style = _STATUS_STYLE.get(known, "white") if known is not None else "white"
+    snapshot = record.get("snapshot_hash")
+    console.print(
+        f"[bold {style}]{status.upper()}[/] [dim]{record.get('request_id', '-')} · "
+        f"{record.get('principal', '-')} · {_short_hash(snapshot) if snapshot else '-'} · "
+        f"{record.get('ts', '-')}[/]"
+    )
+
+    verdicts = record.get("verdicts") or []
+    if verdicts:
+        table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+        table.add_column("code", style="bold")
+        table.add_column("action")
+        table.add_column("subject", style="cyan")
+        table.add_column("meaning")
+        for v in verdicts:
+            action = str(v.get("action", "-"))
+            table.add_row(
+                str(v.get("code", "-")),
+                f"[{_ACTION_STYLE.get(action, 'white')}]{action}[/]",
+                str(v.get("subject", "-")),
+                _code_title(str(v.get("code", ""))),
+            )
+        console.print(table)
+
+    for label in ("original_sql", "executed_sql"):
+        sql = record.get(label)
+        if sql:
+            console.print(f"[dim]{label}:[/]")
+            console.print(Syntax(str(sql), "sql", theme="ansi_dark", word_wrap=True))
+
+    console.print(f"[dim]{_replay_footer(record)}[/]")
+
+
+def _replay_footer(record: dict[str, Any]) -> str:
+    rows = record.get("row_count")
+    parts = [f"{rows} row(s)" if rows is not None else "no rows"]
+    if record.get("truncated"):
+        parts.append("truncated")
+    latency = record.get("latency_ms")
+    if latency is not None:
+        parts.append(f"{float(latency):.1f}ms")
+    if record.get("warehouse"):
+        parts.append(str(record["warehouse"]))
+    if record.get("coalesced"):
+        parts.append("coalesced with an identical in-flight query")
+    for urn in record.get("dataset_urns") or []:
+        parts.append(str(urn))
+    return " · ".join(parts)
+
+
+def _code_title(code: str) -> str:
+    from airlock.engine.verdicts import TITLES, ReasonCode
+
+    try:
+        return TITLES.get(ReasonCode(code), "")
+    except ValueError:  # a code from an older snapshot that this build no longer allocates
+        return ""
+
+
+def _status_enum(status: str) -> EnvelopeStatus | None:
+    try:
+        return EnvelopeStatus(status)
+    except ValueError:
+        return None
