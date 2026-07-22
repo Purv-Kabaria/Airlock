@@ -55,10 +55,21 @@ def main() -> int:
             return 1
 
     print("[2/4] Seeding the DuckDB warehouse...")
-    _run([sys.executable, str(DEMO / "seed_warehouse.py")])
+    if not _run([sys.executable, str(DEMO / "seed_warehouse.py")]):
+        _fail(
+            "Seeding the warehouse failed (its output is above). Check that "
+            f"{DEMO / 'warehouse.duckdb'} is not open in another process, then re-run "
+            "`python demo/up.py`."
+        )
+        return 1
 
     print("[3/4] Ingesting the classified catalog into DataHub...")
-    _run([sys.executable, str(DEMO / "seed_catalog.py")])
+    if not _run([sys.executable, str(DEMO / "seed_catalog.py")]):
+        _fail(
+            "Ingesting the catalog failed (its output is above). DataHub is up but did not accept "
+            "the metadata; run `python demo/reset.py` and then `python demo/up.py` again."
+        )
+        return 1
 
     print("[4/4] Ready.")
     _print_next_steps(gms)
@@ -174,8 +185,13 @@ def _wait_healthy(gms: str, *, timeout: int) -> bool:
     return False
 
 
-def _run(cmd: list[str]) -> None:
-    subprocess.run(cmd, check=True, cwd=str(ROOT))
+def _run(cmd: list[str]) -> bool:
+    """Run a seed step, letting its output through. Returns success rather than raising: this is
+    the judge's first command, and a CalledProcessError traceback here reads as a broken project."""
+    try:
+        return subprocess.run(cmd, cwd=str(ROOT), check=False).returncode == 0
+    except OSError:
+        return False
 
 
 def _load_env() -> None:
@@ -227,12 +243,34 @@ def _print_next_steps(gms: str) -> None:
     print(f"  DataHub UI : {ui}   (login datahub / datahub)")
     print("  Add this to your MCP client (e.g. Claude Desktop):\n")
     print(json.dumps(config, indent=2))
+    airlock = _airlock_display()
     print(
-        '\n  Then try:  airlock check "SELECT name, email, ssn FROM users_raw" --as growth-agent -c demo/airlock.yaml'
+        f'\n  Then try:  {airlock} check "SELECT name, email, ssn FROM users_raw" '
+        "--as growth-agent -c demo/airlock.yaml"
     )
-    print("  Watch it : airlock tail -c demo/airlock.yaml")
+    print(f"  Watch it : {airlock} tail -c demo/airlock.yaml")
     print("  See demo/SCRIPT.md for the 3-minute demo path.")
     print("=" * 70)
+
+
+def _airlock_display() -> str:
+    """How *this* machine should invoke the CLI.
+
+    up.py may have bootstrapped a .venv and re-launched through it, in which case `airlock` is not
+    on the caller's PATH and telling them to run it hands them a command-not-found at the exact
+    moment the setup succeeded.
+    """
+    if shutil.which("airlock"):
+        return "airlock"
+    scripts = "Scripts" if os.name == "nt" else "bin"
+    local = ROOT / ".venv" / scripts / ("airlock.exe" if os.name == "nt" else "airlock")
+    if local.exists():
+        return _quote(str(local))
+    return f"{_quote(sys.executable)} -m airlock.cli.main"
+
+
+def _quote(path: str) -> str:
+    return f'"{path}"' if " " in path else path
 
 
 def _fail(message: str) -> None:
