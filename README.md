@@ -103,26 +103,34 @@ python demo/up.py       # one launcher, every OS; ~3 minutes on first run
 
 `up.py` is safe to run twice (fully idempotent), checks that Docker is actually up before doing anything, finds free ports if the defaults are taken, and prints exactly what to do next. When something in your environment is off, `airlock doctor` walks the whole checklist — Python, config, Docker daemon, DataHub reachability, warehouse connectivity, snapshot compile, masking salt — and prints the fix beneath anything that failed, then one line naming what to do first. It runs every check every time, so you fix the list once instead of rediscovering it one re-run at a time; checks that can't run yet say why rather than disappearing. Docker is skipped outright when your config points at a remote DataHub, because then you don't need it. `--json` gives CI the same report. `python demo/reset.py` returns everything to a clean slate.
 
-Then point your MCP client at it (Claude Desktop shown):
+Then point your MCP client at it. `up.py` prints the exact block to paste, with your absolute paths and the resolved environment already filled in — copy that one rather than retyping this shape:
 
 ```json
 {
   "mcpServers": {
     "warehouse": {
-      "command": "uvx",
-      "args": ["airlock", "serve", "--config", "demo/airlock.yaml"]
+      "command": "/abs/path/to/python",
+      "args": ["-m", "airlock.cli.main", "serve",
+               "--config", "/abs/path/to/demo/airlock.yaml",
+               "--principal", "growth-agent"],
+      "cwd": "/abs/path/to/Airlock",
+      "env": { "DATAHUB_GMS_URL": "...", "WAREHOUSE_DSN": "...", "AIRLOCK_KEY_GROWTH": "..." }
     }
   }
 }
 ```
+
+It names the interpreter that has Airlock installed and carries its own environment, so it works without `airlock` on your `PATH` and without exported variables. `--principal` is what makes the session `growth-agent`; leave it out and the gateway serves the anonymous deny-all principal, which denies every query.
 
 Ask: *"Top customers by lifetime value, with their emails?"* — then watch the enforcement land in the response envelope and in `airlock tail`.
 
 ### Option B — against your own stack
 
 ```bash
-pip install airlock-gateway
+git clone https://github.com/Purv-Kabaria/Airlock && cd Airlock
+uv pip install -e .     # not on PyPI yet; install from the repo
 airlock init            # wizard: DataHub URL + token, warehouse DSN, defaults
+airlock doctor          # every check, with the fix for anything broken
 airlock check "SELECT * FROM users" --as analytics-agent   # dry-run before going live
 airlock serve
 ```

@@ -46,8 +46,8 @@ dev = [
 airlock = "airlock.cli.main:app"
 
 [project.urls]
-Homepage = "https://github.com/airlock-gateway/airlock"
-Repository = "https://github.com/airlock-gateway/airlock"
+Homepage = "https://github.com/Purv-Kabaria/Airlock"
+Repository = "https://github.com/Purv-Kabaria/Airlock"
 
 [build-system]
 requires = ["hatchling"]
