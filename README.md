@@ -370,6 +370,8 @@ Security tooling is judged by its worst case, not its demo. This table is the co
 | 32 | **Dynamic column selectors** (`SELECT COLUMNS('.*') FROM t`, DuckDB) | Fail closed: a `COLUMNS(...)` selector isn't expanded to concrete columns, so it's never classified — denied whole rather than returned raw. | `AIRLOCK-407` |
 | 33 | **Table-valued functions** (`read_csv('/etc/passwd')`, `glob`, `read_text`, `range`) | Denied unconditionally — even under `unknown_tables: allow`. A table function isn't a catalog dataset and can read files/URLs; it never reaches the warehouse. | `AIRLOCK-408` |
 | 34 | **Uncatalogued column on a known table** (warehouse drifted ahead of the catalog) | Fail closed under default `unknown_tables: deny`: a column the catalog schema doesn't list can't be classified, so it's denied — a not-yet-tagged sensitive column never slips through. `allow` passes it. | `AIRLOCK-409` |
+| 35 | **Correlated references** (`LATERAL (SELECT u.ssn)`, correlated subquery) | A column naming an *outer* table is resolved through the enclosing scopes, so it binds to the same facts it would in the outer query. Without this a `LATERAL` body — the one clause an outer scope never revisits — returns the raw column. | `AIRLOCK-120` |
+| 36 | **Ordering and dedup oracles** (`WINDOW w AS (ORDER BY ssn)`, `DISTINCT ON (ssn)`, `FILTER (WHERE ssn = …)`) | Clause classification is deny-by-default: a column in a clause the analyzer doesn't recognize is treated as a predicate, not skipped. Sorting, partitioning, or dedup on a denied column is refused rather than silently nulled — nulling would answer with meaningless numbers instead of telling the agent what to change. | `AIRLOCK-120` / `AIRLOCK-130` |
 
 ## Error message design
 

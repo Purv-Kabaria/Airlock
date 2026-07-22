@@ -121,3 +121,54 @@ def test_derivations_never_leak_raw_sensitive_values(sql: str, con, graph) -> No
     values = {str(cell) for row in con.execute(executed).fetchall() for cell in row}
     raw = RAW_EMAILS | {"111-22-3333", "999-88-7777", "555-44-3333"}
     assert not (values & raw)  # no raw email or ssn escaped through the derivation
+
+
+# One template per SQL clause a sensitive column can reach. The generator above walks projections
+# and CTEs, which is where the obvious leaks are; these are the clauses that hid the non-obvious
+# ones - a LATERAL body and a named WINDOW both returned raw values because nothing ever looked in
+# them. Every template is valid DuckDB on its own, so a binder error means the *rewrite* broke it.
+_CLAUSE_TEMPLATES = [
+    "SELECT s.x FROM dim_users u JOIN LATERAL (SELECT u.{c} AS x) s ON TRUE",
+    "SELECT s.x FROM dim_users, LATERAL (SELECT dim_users.{c} AS x) s",
+    "SELECT (SELECT u.{c}) AS x FROM dim_users u",
+    "SELECT name, ROW_NUMBER() OVER w AS rn FROM dim_users WINDOW w AS (ORDER BY {c})",
+    "SELECT name, ROW_NUMBER() OVER (PARTITION BY {c}) AS rn FROM dim_users",
+    "SELECT DISTINCT ON ({c}) name FROM dim_users",
+    "SELECT COUNT(*) FILTER (WHERE {c} IS NOT NULL) AS n FROM dim_users",
+    "SELECT name FROM dim_users GROUP BY name HAVING MAX({c}) IS NOT NULL",
+    "SELECT a.name FROM dim_users a JOIN dim_users b ON a.{c} = b.{c}",
+    "SELECT {c} AS x FROM dim_users UNION ALL SELECT name FROM dim_users",
+    "SELECT x FROM (SELECT {c} AS x FROM dim_users) q",
+    "WITH a AS (SELECT {c} AS s FROM dim_users), b AS (SELECT s AS t FROM a) SELECT t FROM b",
+    "SELECT CAST({c} AS VARCHAR) AS x FROM dim_users",
+    "SELECT COALESCE({c}, 'n') AS x FROM dim_users",
+    "SELECT name FROM dim_users ORDER BY {c}",
+    "SELECT {c} AS x FROM dim_users ORDER BY 1",
+    "SELECT name FROM dim_users QUALIFY ROW_NUMBER() OVER (ORDER BY {c}) = 1",
+    "SELECT MIN({c}) AS x FROM dim_users",
+    "SELECT {c} AS x FROM dim_users INTERSECT SELECT name FROM dim_users",
+    "SELECT name FROM dim_users WHERE {c} IN (SELECT {c} FROM dim_users)",
+    "SELECT g.x FROM (SELECT {c} AS x FROM dim_users GROUP BY 1) g",
+]
+
+_WRAPS = ["{q}", "SELECT * FROM ({q}) w", "WITH w AS ({q}) SELECT * FROM w"]
+
+
+@st.composite
+def clause_queries(draw: st.DrawFn) -> str:
+    template = draw(st.sampled_from(_CLAUSE_TEMPLATES))
+    column = draw(st.sampled_from(["email", "ssn"]))
+    wrap = draw(st.sampled_from(_WRAPS))
+    return wrap.format(q=template.format(c=column))
+
+
+@settings(max_examples=250, deadline=None)
+@given(sql=clause_queries())
+def test_no_clause_returns_a_sensitive_column_raw(sql: str, con, graph) -> None:
+    principal = graph.principal("growth-agent")
+    resolved = resolve(sql, dialect="duckdb", graph=graph, enforcement=graph.enforcement)
+    if statement_is_denied(decide(resolved, principal, graph)):
+        return  # refusing the statement is a safe outcome; the invariant is about what comes back
+    executed = rewrite(resolved, principal, graph, salt="s").executed_sql
+    values = {str(cell) for row in con.execute(executed).fetchall() for cell in row}
+    assert not (values & (RAW_EMAILS | {"111-22-3333", "999-88-7777", "555-44-3333"}))

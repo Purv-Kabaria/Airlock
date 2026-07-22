@@ -11,9 +11,10 @@ import duckdb
 import pytest
 from tests.unit.conftest import build_graph, make_config
 
-from airlock.analyzer.resolve import resolve
+from airlock.analyzer.resolve import Context, resolve
+from airlock.analyzer.rewrite import rewrite
 from airlock.engine.decide import decide, statement_is_denied
-from airlock.engine.verdicts import EnvelopeStatus
+from airlock.engine.verdicts import EnvelopeStatus, ReasonCode
 from airlock.errors import (
     DynamicColumnsError,
     InputLimitError,
@@ -603,3 +604,78 @@ def test_edge_34_uncatalogued_column_passthrough_when_allowed(graph) -> None:
         "SELECT ghost_col FROM dim_users", dialect="duckdb", graph=graph, enforcement=permissive
     )
     assert resolved.columns == []  # uncatalogued column passes through, unbound, under allow
+
+
+# 35 --------------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT s.x FROM dim_users u JOIN LATERAL (SELECT u.ssn AS x) s ON TRUE",
+        "SELECT s.x FROM dim_users, LATERAL (SELECT dim_users.ssn AS x) s",
+        "SELECT (SELECT u.ssn) AS x FROM dim_users u",
+    ],
+)
+def test_edge_35_correlated_reference_binds_to_outer_table(graph, growth, sql) -> None:
+    # A correlated column is absent from its own scope's sources - sqlglot reports it as an
+    # external column and expects resolution against an enclosing scope. Binding only against the
+    # local scope leaves it unclassified, and a LATERAL body is never revisited from the outer
+    # query, so the raw column would be returned.
+    resolved = resolve(sql, dialect="duckdb", graph=graph, enforcement=graph.enforcement)
+    assert [c.fact.name for c in resolved.columns] == ["ssn"]
+    assert any(v.code is ReasonCode.DENY_COLUMN for v in decide(resolved, growth, graph))
+
+
+def test_edge_35_correlated_lateral_is_masked_in_executed_sql(graph, growth) -> None:
+    resolved = resolve(
+        "SELECT s.x FROM dim_users u JOIN LATERAL (SELECT u.email AS x) s ON TRUE",
+        dialect="duckdb",
+        graph=graph,
+        enforcement=graph.enforcement,
+    )
+    executed = rewrite(resolved, growth, graph, salt="s").executed_sql
+    assert "SPLIT_PART" in executed  # partial_email applied inside the LATERAL body
+
+
+# 36 --------------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # Named WINDOW: the ordering lives in a clause an allowlist of clauses never reaches, so
+        # ROW_NUMBER() would hand back the exact sort order of a denied column.
+        "SELECT name, ROW_NUMBER() OVER w AS rn FROM dim_users WINDOW w AS (ORDER BY ssn)",
+        "SELECT DISTINCT ON (ssn) name FROM dim_users",
+        "SELECT COUNT(*) FILTER (WHERE ssn = '111-22-3333') AS n FROM dim_users",
+        "SELECT name, ROW_NUMBER() OVER (PARTITION BY ssn) AS rn FROM dim_users",
+    ],
+)
+def test_edge_36_ordering_oracles_on_denied_column_deny_the_statement(graph, growth, sql) -> None:
+    resolved = resolve(sql, dialect="duckdb", graph=graph, enforcement=graph.enforcement)
+    assert statement_is_denied(decide(resolved, growth, graph))
+
+
+def test_edge_36_unclassified_clause_falls_back_to_predicate(graph) -> None:
+    # The guarantee behind the row: clause classification is deny-by-default. A column this SELECT
+    # owns that no known clause claimed is still bound, with the strictest context, rather than
+    # dropped. Asserted through the public resolve() so it holds however the clause table changes.
+    resolved = resolve(
+        "SELECT name FROM dim_users WINDOW w AS (ORDER BY ssn)",
+        dialect="duckdb",
+        graph=graph,
+        enforcement=graph.enforcement,
+    )
+    ssn = [c for c in resolved.columns if c.fact.name == "ssn"]
+    assert ssn and ssn[0].context is not Context.PROJECTION
+
+
+def test_edge_36_masked_column_dedup_uses_the_masked_value(graph, growth) -> None:
+    # DISTINCT ON a *masked* column is allowed: dedup happens on the masked expression, so it
+    # cannot distinguish rows the mask makes identical.
+    resolved = resolve(
+        "SELECT DISTINCT ON (email) name FROM dim_users",
+        dialect="duckdb",
+        graph=graph,
+        enforcement=graph.enforcement,
+    )
+    verdicts = decide(resolved, growth, graph)
+    assert not statement_is_denied(verdicts)
+    assert "SPLIT_PART" in rewrite(resolved, growth, graph, salt="s").executed_sql

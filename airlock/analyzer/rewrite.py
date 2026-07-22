@@ -64,7 +64,13 @@ def rewrite(
                 _rename_table(table.node, table.substitute_to.name)
                 modified = True
 
+        # A correlated column is bound once per clause it is visible from, so the same AST node can
+        # appear twice in `resolved.columns`. Replacing it twice would graft the mask onto a node
+        # already detached from the tree, silently dropping the second rewrite.
+        replaced: set[int] = set()
         for col in resolved.columns:
+            if id(col.node) in replaced:
+                continue
             outcome = outcome_for(col, graph)
             if outcome.kind == "mask":
                 if (
@@ -76,6 +82,7 @@ def rewrite(
                 if col.context == Context.PROJECTION:
                     masked_outputs.append((_output_alias(col.node), strategy))
                 col.node.replace(mask_expression(strategy, col.node, dialect=dialect, salt=salt))
+                replaced.add(id(col.node))
                 modified = True
             elif (
                 outcome.kind == "deny"
@@ -83,6 +90,7 @@ def rewrite(
                 and not col.in_aggregate
             ):
                 col.node.replace(exp.Null())
+                replaced.add(id(col.node))
                 modified = True
 
     limit = effective_row_limit(principal, graph.enforcement)

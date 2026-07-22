@@ -243,17 +243,46 @@ def _decide_substitutions(
 _GUARDED = (Context.PREDICATE, Context.GROUP_BY, Context.ORDER_BY)
 
 
+def _find_source(scope: Any, table_name: str) -> Any:
+    """Resolve a column's qualifier to its source, following the scope's ancestor chain.
+
+    A *correlated* reference (a LATERAL body, or a subquery naming an outer table) is not listed
+    in the inner scope's `sources` — sqlglot reports it as an external column and expects the
+    reader to resolve it against an enclosing scope. Looking only at `scope.sources` binds no
+    facts for such a column, which means no rule can fire and the raw value is returned; the
+    LATERAL form is the one clause `_iter_column_contexts` never revisits from the outer scope,
+    so it would leak silently. Unqualified columns are left to the current scope: an empty
+    qualifier carries no name to match and must not be resolved against an ancestor by accident.
+    """
+    if not table_name:
+        return scope.sources.get(table_name)
+    current = scope
+    while current is not None:
+        src = current.sources.get(table_name)
+        if src is not None:
+            return src
+        current = current.parent
+    return None
+
+
 def _bind_columns(
     qualified: exp.Expression, table_map: dict[int, TableRef]
 ) -> tuple[list[ColumnRef], list[GuardedRef]]:
     out: list[ColumnRef] = []
     guarded: list[GuardedRef] = []
+    # A correlated column is reachable from both its own scope and the enclosing one (the outer
+    # clause's `find_all` descends into the nested query), so the same node can be visited twice.
+    # Keyed on context as well as node: the same node seen as a projection *and* as a predicate
+    # must yield both verdicts, but never the same verdict twice.
+    seen: set[tuple[int, Context]] = set()
     for scope in traverse_scope(qualified):
         select = scope.expression
         if not isinstance(select, exp.Select):
             continue
         for col, context, in_agg in _iter_column_contexts(select):
-            src = scope.sources.get(col.table)
+            if (id(col), context) in seen:
+                continue
+            src = _find_source(scope, col.table)
             if not isinstance(src, exp.Table):
                 # References a CTE/subquery output. The base value is masked/nulled at its source,
                 # so the *output* is safe. But a predicate on it, or an aggregate over it, can still
@@ -272,6 +301,7 @@ def _bind_columns(
             fact = effective.column(col.name)
             if fact is None:
                 continue  # uncatalogued column: under allow it passes through; deny caught upstream
+            seen.add((id(col), context))
             out.append(
                 ColumnRef(
                     node=col,
@@ -302,7 +332,7 @@ def _trace_base_facts(
             if proj.alias_or_name.lower() != name.lower():
                 continue
             for c in proj.find_all(exp.Column):
-                src = inner.sources.get(c.table)
+                src = _find_source(inner, c.table)
                 if isinstance(src, exp.Table):
                     ref = table_map.get(id(src))
                     eff = ref.effective if ref is not None else None
@@ -314,28 +344,90 @@ def _trace_base_facts(
     return results
 
 
+# Which clause of a SELECT a column sits in decides what may be done to it. Anything not named
+# here falls through to the strictest context below rather than escaping classification.
+_CLAUSE_CONTEXT: tuple[tuple[str, Context], ...] = (
+    ("expressions", Context.PROJECTION),
+    ("where", Context.PREDICATE),
+    ("having", Context.PREDICATE),
+    ("qualify", Context.PREDICATE),  # DuckDB/Snowflake post-window filter; leaks like WHERE
+    ("prewhere", Context.PREDICATE),  # ClickHouse
+    ("group", Context.GROUP_BY),
+    ("distinct", Context.GROUP_BY),  # DISTINCT ON (c) dedups by c exactly as GROUP BY c would
+    ("order", Context.ORDER_BY),
+    ("sort", Context.ORDER_BY),  # Hive SORT BY
+    ("cluster", Context.ORDER_BY),
+    ("distribute", Context.ORDER_BY),
+    ("windows", Context.ORDER_BY),  # named WINDOW w AS (ORDER BY c) - an ordering oracle
+    ("limit", Context.PREDICATE),
+    ("offset", Context.PREDICATE),
+)
+
+# Nodes that open a scope of their own. A column below one of these belongs to that scope, which
+# binds it with its own clause context; this SELECT must not claim it.
+_NESTED_SCOPE = (
+    exp.Select,
+    exp.Subquery,
+    exp.CTE,
+    exp.Lateral,
+    exp.Union,
+    exp.Intersect,
+    exp.Except,
+)
+
+
 def _iter_column_contexts(
     select: exp.Select,
 ) -> Iterator[tuple[exp.Column, Context, bool]]:
-    for proj in select.expressions:
-        for col in proj.find_all(exp.Column):
-            yield col, Context.PROJECTION, _under_aggregate(col, proj)
-    for arg, ctx in (
-        ("where", Context.PREDICATE),
-        ("having", Context.PREDICATE),
-        ("qualify", Context.PREDICATE),  # DuckDB/Snowflake post-window filter; leaks like WHERE
-        ("group", Context.GROUP_BY),
-        ("order", Context.ORDER_BY),
-    ):
+    claimed: set[int] = set()
+    for arg, ctx in _CLAUSE_CONTEXT:
         node = select.args.get(arg)
-        if node is not None:
-            for col in node.find_all(exp.Column):
-                yield col, ctx, _under_aggregate(col, node)
+        for sub in node if isinstance(node, list) else [node] if node is not None else []:
+            for col in sub.find_all(exp.Column):
+                claimed.add(id(col))
+                yield col, _refine_context(col, sub, ctx), _under_aggregate(col, sub)
     for join in select.args.get("joins") or []:
         on = join.args.get("on")
         if on is not None:
             for col in on.find_all(exp.Column):
+                claimed.add(id(col))
                 yield col, Context.PREDICATE, _under_aggregate(col, on)
+    # Fail closed on clauses this table does not name - a dialect extension, or a node a later
+    # sqlglot adds. Skipping them is how an ordering oracle like `WINDOW w AS (ORDER BY ssn)`
+    # returns a denied column's sort order intact, so an unrecognized clause gets the strictest
+    # context instead. Only columns this SELECT owns directly are considered; a nested scope binds
+    # its own with the context they actually have.
+    for col in select.find_all(exp.Column):
+        if id(col) not in claimed and _owned_by(col, select):
+            yield col, Context.PREDICATE, False
+
+
+def _owned_by(col: exp.Column, select: exp.Select) -> bool:
+    node = col.parent
+    while node is not None and node is not select:
+        if isinstance(node, _NESTED_SCOPE):
+            return False
+        node = node.parent
+    return node is select
+
+
+def _refine_context(col: exp.Column, root: exp.Expression, ctx: Context) -> Context:
+    """Sharpen a clause-level context using the node the column actually sits under.
+
+    Two constructs sit inside a projection but behave like other clauses: an aggregate's
+    `FILTER (WHERE ...)` is a predicate, and a window's `PARTITION BY` / `ORDER BY` is an
+    ordering. Classifying them as projections would null or mask the column and answer with
+    quietly wrong numbers rather than telling the agent what it may not do.
+    """
+    node: Any = col.parent
+    child: Any = col
+    while node is not None and node is not root:
+        if isinstance(node, exp.Filter) and child.arg_key == "expression":
+            return Context.PREDICATE
+        if isinstance(node, exp.Window) and child.arg_key in ("partition_by", "order"):
+            return Context.ORDER_BY
+        node, child = node.parent, node
+    return ctx
 
 
 def _under_aggregate(col: exp.Expression, stop: exp.Expression) -> bool:
@@ -355,7 +447,7 @@ def _referenced_columns_by_table(
         if not isinstance(scope.expression, exp.Select):
             continue
         for col in scope.expression.find_all(exp.Column):
-            src = scope.sources.get(col.table)
+            src = _find_source(scope, col.table)
             if isinstance(src, exp.Table) and id(src) in table_map:
                 out.setdefault(id(src), set()).add(col.name.lower())
     return out
