@@ -29,6 +29,8 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.2"]
+snowflake = ["snowflake-connector-python>=3.7"]
+bigquery = ["google-cloud-bigquery>=3.20"]
 otel = [
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
@@ -109,6 +111,8 @@ module = [
     "opentelemetry.*",
     "psycopg.*",
     "psycopg_pool.*",
+    "snowflake.*",
+    "google.*",
 ]
 ignore_missing_imports = true
 

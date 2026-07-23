@@ -127,9 +127,19 @@ def test_warehouse_kind_without_an_adapter_is_rejected_at_config_load(
     from config load to first query, and the README used to advertise a kind that did not exist."""
     monkeypatch.setenv("DH_TOKEN", "t")
     monkeypatch.setenv("KEY_A", "k")
-    bad = _YAML.format(url="http://gms:8080").replace("kind: duckdb", "kind: snowflake")
+    # redshift is a real sqlglot dialect but has no adapter in exec/, so config must reject it.
+    bad = _YAML.format(url="http://gms:8080").replace("kind: duckdb", "kind: redshift")
     with pytest.raises(ConfigError, match="kind"):
         load_config(_write(tmp_path, bad))
+
+
+# A valid DSN for each configurable kind, so make_adapter can construct without a live connection.
+_DSN_FOR_KIND = {
+    "duckdb": ":memory:",
+    "postgres": "postgresql://localhost/db",
+    "snowflake": "snowflake://u:p@acct/db/schema?warehouse=W&role=R",
+    "bigquery": "bigquery://project/dataset",
+}
 
 
 def test_every_configurable_warehouse_kind_has_an_adapter() -> None:
@@ -140,6 +150,8 @@ def test_every_configurable_warehouse_kind_has_an_adapter() -> None:
     from airlock.config import WarehouseConfig
     from airlock.exec.base import make_adapter
 
-    for kind in get_args(WarehouseConfig.model_fields["kind"].annotation):
-        adapter = make_adapter(WarehouseConfig(kind=kind, dsn=":memory:"))
+    kinds = get_args(WarehouseConfig.model_fields["kind"].annotation)
+    assert set(kinds) == set(_DSN_FOR_KIND), "add a DSN for a new kind so this test can build it"
+    for kind in kinds:
+        adapter = make_adapter(WarehouseConfig(kind=kind, dsn=_DSN_FOR_KIND[kind]))
         assert adapter.kind == kind

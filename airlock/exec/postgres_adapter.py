@@ -10,12 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import datetime as dt
-import decimal
 from typing import Any
 
 from airlock.errors import WarehouseUnavailableError
-from airlock.exec.base import QueryResult
+from airlock.exec.base import QueryResult, coerce_value
 from airlock.logging import get_logger
 
 log = get_logger("airlock.exec.postgres")
@@ -61,7 +59,8 @@ class PostgresAdapter:
         # backstop that keeps the envelope within row_limit even if a query shape ever slips a LIMIT.
         truncated = len(rows) >= row_limit
         shaped = [
-            {c: _coerce(v) for c, v in zip(columns, row, strict=False)} for row in rows[:row_limit]
+            {c: coerce_value(v) for c, v in zip(columns, row, strict=False)}
+            for row in rows[:row_limit]
         ]
         return QueryResult(columns=columns, rows=shaped, truncated=truncated)
 
@@ -150,15 +149,3 @@ class PostgresAdapter:
         import psycopg
 
         return await psycopg.AsyncConnection.connect(self._dsn, autocommit=True)
-
-
-def _coerce(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, decimal.Decimal):
-        return float(value)
-    if isinstance(value, (dt.date, dt.datetime, dt.time)):
-        return value.isoformat()
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        return bytes(value).hex()
-    return str(value)

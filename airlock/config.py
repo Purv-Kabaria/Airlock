@@ -89,9 +89,19 @@ class WarehouseConfig(_Strict):
     # Only kinds with a shipped adapter in exec/. Accepting a kind here that make_adapter cannot
     # build moves the failure from config load to first query, where it is far more expensive to
     # diagnose. Add a value only in the same change that adds its adapter.
-    kind: Literal["duckdb", "postgres"]
+    #
+    # Each value is also a sqlglot dialect name (see `dialect`), so the analyzer parses and the
+    # rewriter renders in the warehouse's own SQL. That the two coincide is deliberate: a kind whose
+    # name is not a sqlglot dialect would need a mapping entry below before it could be added.
+    kind: Literal["duckdb", "postgres", "snowflake", "bigquery"]
     dsn: str
     defaults: WarehouseDefaults = WarehouseDefaults()
+
+    @property
+    def dialect(self) -> str:
+        """The sqlglot dialect for this warehouse. Identical to `kind` today; the indirection exists
+        so a future kind whose name differs from its dialect has one place to map it."""
+        return self.kind
 
 
 class EnforcementConfig(_Strict):

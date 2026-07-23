@@ -7,6 +7,8 @@ needs from a warehouse goes through these five methods.
 
 from __future__ import annotations
 
+import datetime as dt
+import decimal
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -19,6 +21,20 @@ class QueryResult:
     columns: list[str]
     rows: list[dict[str, Any]]
     truncated: bool
+
+
+def coerce_value(value: Any) -> Any:
+    """Make one warehouse cell JSON-safe for the envelope. Shared by every adapter so a date or a
+    decimal serializes the same way whichever warehouse produced it."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, decimal.Decimal):
+        return float(value)
+    if isinstance(value, (dt.date, dt.datetime, dt.time)):
+        return value.isoformat()
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return bytes(value).hex()
+    return str(value)
 
 
 @runtime_checkable
@@ -37,7 +53,12 @@ class WarehouseAdapter(Protocol):
 
 
 def make_adapter(config: WarehouseConfig, *, pool_size: int = 8) -> WarehouseAdapter:
-    """Construct the adapter named by `config.kind`. The only place adapters are selected."""
+    """Construct the adapter named by `config.kind`. The only place adapters are selected.
+
+    Each adapter imports its driver lazily (inside the adapter, not here), so a gateway that only
+    ever talks to DuckDB never needs snowflake-connector-python installed. Cloud drivers ship as
+    optional extras (`pip install airlock-gateway[snowflake]`).
+    """
     if config.kind == "duckdb":
         from airlock.exec.duckdb_adapter import DuckdbAdapter
 
@@ -46,8 +67,17 @@ def make_adapter(config: WarehouseConfig, *, pool_size: int = 8) -> WarehouseAda
         from airlock.exec.postgres_adapter import PostgresAdapter
 
         return PostgresAdapter(config.dsn, pool_size=pool_size)
+    if config.kind == "snowflake":
+        from airlock.exec.snowflake_adapter import SnowflakeAdapter
+
+        return SnowflakeAdapter(config.dsn, pool_size=pool_size)
+    if config.kind == "bigquery":
+        from airlock.exec.bigquery_adapter import BigQueryAdapter
+
+        return BigQueryAdapter(config.dsn)
     # Unreachable through config load (the kind is a Literal), but reachable when a WarehouseConfig
     # is built programmatically. Named error over a bare ValueError so the fix is in the message.
     raise ConfigError(
-        f"no warehouse adapter for warehouse.kind {config.kind!r}; supported: duckdb, postgres"
+        f"no warehouse adapter for warehouse.kind {config.kind!r}; "
+        "supported: duckdb, postgres, snowflake, bigquery"
     )
