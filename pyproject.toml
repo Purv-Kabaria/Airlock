@@ -32,8 +32,10 @@ postgres = ["psycopg[binary]>=3.2"]
 snowflake = ["snowflake-connector-python>=3.7"]
 bigquery = ["google-cloud-bigquery>=3.20"]
 # For the live-agent demo (demo/agent_reformulation.py). Not needed to run Airlock itself - the
-# gateway never calls an LLM; this is a client that drives Airlock's MCP tools on camera.
-agent = ["anthropic>=0.69"]
+# gateway never calls an LLM; this is a client that drives Airlock's MCP tools on camera. Both SDKs
+# are optional and imported lazily, so only the provider you actually use has to be installed; the
+# openai client also speaks to Azure, Together, Groq, Ollama, and vLLM via a base URL.
+agent = ["anthropic>=0.69", "openai>=1.40"]
 otel = [
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
