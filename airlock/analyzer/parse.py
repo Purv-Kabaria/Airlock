@@ -126,38 +126,34 @@ def parse_single(sql: str, dialect: str) -> exp.Expression:
         )
 
     stmt = cast(exp.Expression, statements[0])
-    _check_limits(stmt)
-    _reject_empty_projection(stmt)
-    _strip_comments(stmt)
+    _scan_and_sanitize(stmt)
     return stmt
 
 
-def _reject_empty_projection(stmt: exp.Expression) -> None:
-    """A SELECT that projects nothing ('SELECT', 'SELECT FROM t') is malformed: sqlglot parses it,
-    but it is not runnable SQL and the rewriter would emit 'SELECT LIMIT 10000'. Fail closed at parse
-    rather than forward a broken statement - no valid SQL has a projectionless SELECT."""
-    for node in stmt.walk():
-        if isinstance(node, exp.Select) and not node.expressions:
-            raise ParseError("Query selects no columns.")
+def _scan_and_sanitize(stmt: exp.Expression) -> None:
+    """One pass over the AST that does every per-node parse-time check and mutation:
 
+      * node-count and IN-list caps, so a pathological tree is rejected before analysis (edge 30),
+      * a projectionless SELECT (`SELECT`, `SELECT FROM t`) is rejected - sqlglot parses it but it
+        is not runnable SQL and the rewriter would emit `SELECT LIMIT 10000` (fail closed),
+      * comments are dropped from every node so nothing can hide in them (edge 28).
 
-def _strip_comments(stmt: exp.Expression) -> None:
-    """Drop comments from every node so nothing can hide in them (edge 28)."""
-    for node in stmt.walk():
-        if node.comments:
-            node.comments = None
-
-
-def _check_limits(stmt: exp.Expression) -> None:
+    These were three separate `walk()`s; one traversal is a third of the tree-walking on the parse
+    hot path, and the node-count guard still trips mid-walk, so the huge-tree protection is intact.
+    """
     for node_count, node in enumerate(stmt.walk(), start=1):
         if node_count > MAX_NODES:
             raise InputLimitError(f"Query has more than {MAX_NODES} nodes.")
+        if isinstance(node, exp.Select) and not node.expressions:
+            raise ParseError("Query selects no columns.")
         if isinstance(node, exp.In):
             values = node.args.get("expressions") or []
             if len(values) > MAX_IN_LIST:
                 raise InputLimitError(
                     f"IN list has {len(values)} items; the limit is {MAX_IN_LIST}."
                 )
+        if node.comments:
+            node.comments = None
 
 
 _SELECT_ROOTS = (exp.Select, exp.Union, exp.Intersect, exp.Except, exp.Subquery)
