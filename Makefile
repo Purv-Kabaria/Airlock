@@ -5,7 +5,7 @@
 # `bench`, `eval`, `judge`, and `examples` targets run against the REAL stack and need `make up`
 # first (a live DataHub + DuckDB); `make integration` runs them together.
 
-.PHONY: install test unit lint fmt typecheck edges examples bench judge eval load up reset all ci integration rehearse demo
+.PHONY: install test unit lint fmt typecheck edges examples bench judge eval load up reset all ci integration rehearse demo agent
 
 install:
 	uv sync --extra dev
@@ -57,6 +57,11 @@ rehearse:
 
 demo:
 	python demo/record.py
+
+# The live-agent segment: a real LLM gets denied by Airlock and reformulates, over MCP. Needs the
+# stack up and an Anthropic API key. `--capture` also writes examples/agent_reformulation.md.
+agent:
+	python demo/agent_reformulation.py --capture
 
 # Fast lane: no external services. This is what the CI unit matrix runs on every commit.
 ci: lint typecheck unit edges

@@ -171,6 +171,34 @@ query again]*
 
 ---
 
+## Optional closing segment — the agent reformulates itself
+
+This is a **separate clip**, not part of the 2:58 above. It is the single most on-message thing the
+project can show — a real LLM agent getting denied and fixing its own next query — but it depends on
+a live Anthropic API call, the one moving part that can hang or misbehave mid-take. Keep it out of
+the main recording so a flaky call can never sink the whole video. Record it once, on its own, and
+cut it in after the close (or link it).
+
+`python demo/agent_reformulation.py` connects a real Claude model to Airlock's MCP tools over stdio —
+the same surface Claude Code uses — with no warehouse credential of its own. It's asked to look up a
+customer by SSN; Airlock denies it; the agent reads the verdict's hint and reformulates to something
+allowed, on its own.
+
+> This is a real agent — Claude, wired to Airlock over the same protocol Claude Code speaks, holding
+> only its gateway key. Watch: it's asked to find a customer by social security number. Denied. It
+> reads the reason and the hint in the response — not an error string, a verdict it can parse — and
+> it rewrites its own next query to work within the policy. Nobody told it the rule. The gateway
+> told it, in a form it could act on. That is the whole idea: guardrails that steer instead of
+> stop.
+
+**The fallback is mandatory, not optional.** Before you need it, run
+`python demo/agent_reformulation.py --capture` once against the live stack with an API key set — it
+writes the real transcript to `examples/agent_reformulation.md`. If the live call misbehaves while
+recording, screen-capture that transcript instead. It is a real run, so nothing is faked either way;
+you are only choosing between watching it happen and reading what happened.
+
+---
+
 ## Delivery notes
 
 - **Do not read reason codes aloud.** They are on screen; saying "A-I-R-L-O-C-K dash one one zero"

@@ -31,6 +31,9 @@ dependencies = [
 postgres = ["psycopg[binary]>=3.2"]
 snowflake = ["snowflake-connector-python>=3.7"]
 bigquery = ["google-cloud-bigquery>=3.20"]
+# For the live-agent demo (demo/agent_reformulation.py). Not needed to run Airlock itself - the
+# gateway never calls an LLM; this is a client that drives Airlock's MCP tools on camera.
+agent = ["anthropic>=0.69"]
 otel = [
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
