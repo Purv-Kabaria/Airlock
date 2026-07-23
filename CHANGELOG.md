@@ -30,6 +30,24 @@ First working build for the Build with DataHub hackathon.
 - Async request path with snapshot pinning, decision cache, in-flight coalescing (waiters survive
   a leader's cancellation), bounded-concurrency queue, and `/healthz` `/readyz`.
 
+### Warehouses & agents (not vendor-locked)
+- Warehouse adapters for DuckDB, Postgres, Snowflake, and BigQuery, plus `kind: dbapi` for any
+  PEP 249 driver (MySQL, Trino, ClickHouse, Redshift, ODBC, ...) named by module + sqlglot dialect.
+  SQLite is the stdlib, zero-dependency case, tested live end to end.
+- Masking renders per sqlglot dialect (verified across nine): one rule, correct SQL on every
+  warehouse — `TO_HEX(MD5())` on BigQuery, `SUBSTRING(... FOR 1)` on Postgres — with no
+  per-warehouse policy. Fixed a real bug where masks were only correct on DuckDB/Postgres.
+- `airlock mcp-config` prints the ready-to-paste MCP server block for Claude Code, Cursor, Claude
+  Desktop, Antigravity, or a generic client; `docs/agent-harnesses.md` walks each one.
+- Per-request identity on HTTP transport via `X-Airlock-Key`, so one gateway serves many agents
+  without handing them all the startup principal's scope.
+- Live-agent demo (`demo/agent_reformulation.py`) drives the deny-then-reformulate loop with a real
+  model on Anthropic or any OpenAI-compatible endpoint (OpenAI, Together, Groq, Ollama, vLLM).
+
+### Performance
+- One AST walk on the parse hot path (node/IN-list caps, projectionless-SELECT rejection, and
+  comment stripping fused from three walks into one). Decision path stays low single-digit ms.
+
 ### Audit
 - Append-only line-atomic JSONL, optional OpenTelemetry, and DataHub write-back (structured
   properties `airlock.lastAgentAccess` / `lastPolicySnapshot` / `deniedAttempts` + a per-dataset
