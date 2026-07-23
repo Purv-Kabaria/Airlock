@@ -1,8 +1,18 @@
 """Strategy registry. Each strategy turns a column reference into a masking SQL expression.
 
-Expressions are built by templating the (already qualified) column SQL into a dialect string
-and reparsing, so the result renders correctly for whatever warehouse dialect is active. The
-`hash` strategy is salted-but-deterministic (equality-preserving), which is what keeps
+Every template is written once in a single canonical dialect, parsed into an AST, and rendered
+into the *warehouse's* dialect only at the end (in `analyzer.rewrite`). That render transpiles the
+function semantics, not just the syntax: `MD5(...)` becomes `TO_HEX(MD5(...))` on BigQuery,
+`DATE_TRUNC` becomes `TIMESTAMP_TRUNC`, `||` becomes `CONCAT` on MySQL, `RIGHT`/`LENGTH`/`STRPOS`
+become each dialect's spelling. Re-parsing a template *in* the target dialect (the old approach)
+does not do this - it round-trips `MD5` back to a raw `MD5` that returns bytes on BigQuery - so the
+canonical parse is what makes one set of templates correct across warehouses.
+
+Templates therefore avoid any function sqlglot cannot transpile to a target: `SPLIT_PART`, for
+instance, has no BigQuery equivalent, so `partial_email` extracts the domain with `STRPOS` +
+`SUBSTRING`, which every supported dialect renders natively.
+
+The `hash` strategy is salted-but-deterministic (equality-preserving), which is what keeps
 `GROUP BY` and `COUNT(DISTINCT ...)` correct on masked keys.
 """
 
@@ -14,13 +24,25 @@ from typing import cast
 import sqlglot
 from sqlglot import exp
 
+# The dialect the templates below are written in. Chosen because its scalar functions are the ones
+# sqlglot has the most complete transpilation coverage for; the value is never the warehouse's.
+_CANON = "duckdb"
+
 # Explicit strategy -> SQL template. `{col}` is the qualified column SQL, `{salt}` a stable salt.
-# Templates avoid regex backreferences on purpose: dialects disagree on backslash escaping in
-# string literals, so we stay on portable scalar functions (SUBSTR / SPLIT_PART / RIGHT / MD5).
+# Written in the canonical dialect; transpiled to the warehouse dialect at render time. Every
+# function here must have a transpilation in sqlglot for each dialect we claim to support, verified
+# by test_masking_is_dialect_portable.
 _TEMPLATES: dict[str, str] = {
     "null": "NULL",
     "hash": "MD5('{salt}' || CAST({col} AS VARCHAR))",
-    "partial_email": "SUBSTR(CAST({col} AS VARCHAR), 1, 1) || '***@' || SPLIT_PART(CAST({col} AS VARCHAR), '@', 2)",
+    # Domain via STRPOS + SUBSTRING, not SPLIT_PART: SPLIT_PART has no BigQuery equivalent and would
+    # pass through untranspiled. STRPOS transpiles to POSITION / CHARINDEX / INSTR / LOCATE per
+    # dialect. A value with no '@' yields STRPOS = 0, so the whole value follows the '@' - still
+    # masked, still carrying the '***@' shape verify_value checks.
+    "partial_email": (
+        "SUBSTRING(CAST({col} AS VARCHAR), 1, 1) || '***@' || "
+        "SUBSTRING(CAST({col} AS VARCHAR), STRPOS(CAST({col} AS VARCHAR), '@') + 1)"
+    ),
     # The length guard is load-bearing: RIGHT(x, 4) on a value of four characters or fewer returns
     # the whole value, so without it the strategy stops masking exactly when the data is shortest.
     # Below a real phone number's length there is nothing safe to reveal, so reveal nothing.
@@ -76,18 +98,24 @@ def resolve_strategy(spec_strategy: str, *, column_name: str, data_type: str) ->
     return "hash"
 
 
-def mask_expression(
-    strategy: str, column: exp.Column, *, dialect: str, salt: str
-) -> exp.Expression:
-    """The masking expression for `column`, ready to replace it in the AST."""
+def mask_expression(strategy: str, column: exp.Column, *, salt: str) -> exp.Expression:
+    """The masking expression for `column`, as a canonical-dialect AST.
+
+    The caller grafts this into the query and renders the whole statement in the warehouse dialect,
+    at which point sqlglot transpiles the mask's functions to that warehouse. Returning a
+    canonical-parsed node (not a target-parsed one) is what makes the transpilation happen; see the
+    module docstring.
+    """
     template = _TEMPLATES.get(strategy)
     if template is None:
         raise ValueError(f"unknown masking strategy {strategy!r}")
-    col_sql = column.sql(dialect=dialect)
+    # Render the column in the canonical dialect so it re-parses cleanly here; identifier quoting is
+    # re-applied for the warehouse dialect at final render, so a target-quoted column round-trips.
+    col_sql = column.sql(dialect=_CANON)
     # The salt lands inside a single-quoted SQL literal; double any quote so a salt with an
     # apostrophe cannot break out of the literal (operator-config footgun, not attacker input).
     rendered = template.format(col=col_sql, salt=salt.replace("'", "''"))
-    return cast(exp.Expression, sqlglot.parse_one(rendered, dialect=dialect))
+    return cast(exp.Expression, sqlglot.parse_one(rendered, dialect=_CANON))
 
 
 def strategy_hint(strategy: str) -> str:

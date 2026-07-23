@@ -633,7 +633,7 @@ def test_edge_35_correlated_lateral_is_masked_in_executed_sql(graph, growth) -> 
         enforcement=graph.enforcement,
     )
     executed = rewrite(resolved, growth, graph, salt="s").executed_sql
-    assert "SPLIT_PART" in executed  # partial_email applied inside the LATERAL body
+    assert "***@" in executed  # partial_email applied inside the LATERAL body
 
 
 # 36 --------------------------------------------------------------------------------
@@ -678,4 +678,4 @@ def test_edge_36_masked_column_dedup_uses_the_masked_value(graph, growth) -> Non
     )
     verdicts = decide(resolved, growth, graph)
     assert not statement_is_denied(verdicts)
-    assert "SPLIT_PART" in rewrite(resolved, growth, graph, salt="s").executed_sql
+    assert "***@" in rewrite(resolved, growth, graph, salt="s").executed_sql

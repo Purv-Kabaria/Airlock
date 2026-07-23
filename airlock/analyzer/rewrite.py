@@ -81,7 +81,7 @@ def rewrite(
                 strategy = outcome.strategy or "hash"
                 if col.context == Context.PROJECTION:
                     masked_outputs.append((_output_alias(col.node), strategy))
-                col.node.replace(mask_expression(strategy, col.node, dialect=dialect, salt=salt))
+                col.node.replace(mask_expression(strategy, col.node, salt=salt))
                 replaced.add(id(col.node))
                 modified = True
             elif (
