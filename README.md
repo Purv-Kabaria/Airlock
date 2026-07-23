@@ -103,24 +103,13 @@ python demo/up.py       # one launcher, every OS; ~3 minutes on first run
 
 `up.py` is safe to run twice (fully idempotent), checks that Docker is actually up before doing anything, and prints exactly what to do next. It boots DataHub's GMS on `18080` rather than DataHub's own `8080` — one of the most commonly occupied ports on a laptop — and if that is taken too it moves to the next free port, writes the one it used into `demo/.env`, and points every command at it. A service already holding a port is never mistaken for DataHub: the health check verifies it is actually GMS answering, not whatever else replied `200`. When something in your environment is off, `airlock doctor` walks the whole checklist — Python, config, Docker daemon, DataHub reachability, warehouse connectivity, snapshot compile, masking salt — and prints the fix beneath anything that failed, then one line naming what to do first. It runs every check every time, so you fix the list once instead of rediscovering it one re-run at a time; checks that can't run yet say why rather than disappearing. Docker is skipped outright when your config points at a remote DataHub, because then you don't need it. `--json` gives CI the same report. `python demo/reset.py` returns everything to a clean slate.
 
-Then point your MCP client at it. `up.py` prints the exact block to paste, with your absolute paths and the resolved environment already filled in — copy that one rather than retyping this shape:
+Then point your MCP client at it. `airlock mcp-config` prints the exact server block for your harness — the interpreter that has Airlock installed, an absolute config path, and the environment your config's `${VAR}` references need, all filled in for this machine:
 
-```json
-{
-  "mcpServers": {
-    "warehouse": {
-      "command": "/abs/path/to/python",
-      "args": ["-m", "airlock.cli.main", "serve",
-               "--config", "/abs/path/to/demo/airlock.yaml",
-               "--principal", "growth-agent"],
-      "cwd": "/abs/path/to/Airlock",
-      "env": { "DATAHUB_GMS_URL": "...", "WAREHOUSE_DSN": "...", "AIRLOCK_KEY_GROWTH": "..." }
-    }
-  }
-}
+```bash
+airlock mcp-config --client claude-code -c demo/airlock.yaml   # or cursor, claude-desktop, antigravity
 ```
 
-It names the interpreter that has Airlock installed and carries its own environment, so it works without `airlock` on your `PATH` and without exported variables. `--principal` is what makes the session `growth-agent`; leave it out and the gateway serves the anonymous deny-all principal, which denies every query.
+It emits the `mcpServers` block to paste (and, for Claude Code, the equivalent `claude mcp add` one-liner). Because it names the interpreter Airlock is installed under and carries its own environment, it works without `airlock` on your `PATH` and without exported variables — the three things that otherwise make an MCP server silently fail to start. `--principal` fixes the agent identity for a stdio server; leave it out and the gateway serves the anonymous deny-all principal, which denies every query. `python demo/up.py` prints the same block on a successful boot. Full per-harness walkthrough: [`docs/agent-harnesses.md`](docs/agent-harnesses.md).
 
 Ask: *"Top customers by lifetime value, with their emails?"* — then watch the enforcement land in the response envelope and in `airlock tail`.
 

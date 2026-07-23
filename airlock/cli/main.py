@@ -70,6 +70,51 @@ def _root(
     """Airlock - policy compiled from DataHub, enforced in-flight, explained to the agent."""
 
 
+@app.command(name="mcp-config", rich_help_panel=_SETUP)
+def mcp_config(
+    client: str = typer.Option(
+        "claude-code",
+        "--client",
+        help="Target harness: claude-code | cursor | claude-desktop | antigravity | generic.",
+    ),
+    config: Path = _CONFIG_OPT,
+    principal: str = typer.Option(
+        "growth-agent", "--principal", help="Principal this stdio server acts as."
+    ),
+    transport: str = typer.Option("stdio", "--transport", help="stdio | http."),
+    as_json: bool = typer.Option(False, "--json", help="Print only the JSON block, for scripts."),
+) -> None:
+    """Print the MCP-server config block to point a harness (Claude Code, Cursor, ...) at Airlock."""
+    from airlock.cli.mcp_config import CLIENTS, build_entry, referenced_env_vars, render
+
+    if client not in CLIENTS:
+        err.print(f"[red]unknown client {client!r}[/]; choose one of: {', '.join(CLIENTS)}")
+        raise typer.Exit(2)
+
+    autoload_env(
+        config
+    )  # so a demo's ${...} refs resolve to real values, as `serve` would see them
+    var_names = referenced_env_vars(config)
+    env = {name: os.environ.get(name, "") for name in var_names}
+    missing = [name for name, value in env.items() if not value]
+    entry = build_entry(
+        config=config,
+        principal=None if transport == "http" else principal,
+        transport=transport,
+        env=env,
+    )
+    if as_json:
+        import json
+
+        from airlock.cli.mcp_config import _entry_json
+
+        print(
+            json.dumps({"mcpServers": {"airlock-warehouse": _entry_json(client, entry)}}, indent=2)
+        )
+        return
+    console.print(render(client, entry, transport=transport, missing=missing))
+
+
 @app.command(rich_help_panel=_SETUP)
 def init(
     path: Path = typer.Option("airlock.yaml", "--path", "-p", help="Where to write the config."),
