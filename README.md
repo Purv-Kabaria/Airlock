@@ -12,17 +12,19 @@
 </p>
 
 <p align="center">
-  <b>Point your agent's database connection at Airlock instead of the warehouse.</b><br/>
-  Policy is compiled live from your DataHub catalog, enforced in-flight on every query, and<br/>
-  explained back to the agent in a form it can act on. One URL swap. No warehouse changes.
+  <b>Let an AI assistant use your database without handing over everyone's private data.</b><br/>
+  Point the agent at Airlock instead of the warehouse. It reads your DataHub catalog to decide<br/>
+  what each agent may see, hides the rest as the query runs, and tells the agent why.<br/>
+  One URL change. Nothing installed in your database.
 </p>
 
 <p align="center">
+  <a href="#the-problem">The problem</a> ·
+  <a href="#where-the-rules-come-from">How DataHub is used</a> ·
+  <a href="#what-it-works-with">What it works with</a> ·
   <a href="#quickstart">Quickstart</a> ·
-  <a href="#see-it-work">Demo</a> ·
-  <a href="#features">Features</a> ·
+  <a href="#see-it-work">See it work</a> ·
   <a href="#architecture">Architecture</a> ·
-  <a href="#edge-cases--and-how-airlock-handles-them">Edge cases</a> ·
   <a href="#configuration-reference">Configuration</a> ·
   <a href="#faq">FAQ</a>
 </p>
@@ -33,7 +35,7 @@
   <img src="docs/assets/rewrite.svg" alt="Before and after: the query an agent sends versus the query Airlock actually runs" width="880" />
 </p>
 
-The agent asked for `ssn` and didn't get it. It got told *why*, in a form it could read, so its next query didn't ask again. No warehouse grants were rewritten, no view was rebuilt, and the decision sits in the audit log next to the exact policy version behind it.
+The agent asked for social security numbers and didn't get them. It was told *why*, in words a program can act on, so its next question didn't ask again. Nobody changed a database permission or rebuilt a view, and the decision is in the audit log next to the exact catalog version behind it.
 
 ## The problem
 
@@ -57,19 +59,77 @@ So pilots stall in security review, or they ship with an over-permissioned crede
 
 ## The solution
 
-Airlock is that place: a small, self-hostable gateway that speaks **MCP** to the agent and **your warehouse's SQL** on the other side. Every query that passes through it goes down the same road.
+Airlock is that place: a small gateway you run yourself. The agent talks to it the way it would talk to any tool; it talks to your database in that database's own SQL. Every question takes the same five steps.
 
 <p align="center">
   <img src="docs/assets/verdicts.svg" alt="The four Airlock verdicts: allow, mask, deny, substitute" width="880" />
 </p>
 
-1. **Every query is parsed, not pattern-matched.** Airlock builds a full AST with [sqlglot](https://sqlglot.com), qualifies every column through aliases, CTEs, subqueries, and `SELECT *`, and resolves each one to a catalog URN. A column smuggled through three aliases is still the column it is.
-2. **Policy is compiled from DataHub, not hand-written.** Column tags (`PII`, `Sensitive`), glossary terms, deprecation status, certification, domains, and ownership are facts your governance team already maintains; Airlock turns them into enforceable rules and makes the catalog *load-bearing* instead of decorative.
-3. **Enforcement is a query rewrite.** Masking, column denial, row-limit and timeout injection, and the part nobody else does: **certified-table substitution**. Query a deprecated table and, if lineage points to a certified equivalent with a compatible schema, Airlock quietly redirects you there.
-4. **Every intervention is explained in a machine-readable envelope.** A blocked human retries in frustration. A blocked agent that reads *"column `ssn` denied under rule `pii-hard-deny`; no substitute; try an aggregate over a non-sensitive key"* fixes itself on the next turn. Guardrails become steering.
-5. **Every decision is written back.** Local JSONL audit, optional OpenTelemetry, and an access ledger written into DataHub, so the graph accumulates a queryable record of what each agent touched, when, and under which policy snapshot.
+1. **It reads the query properly.** Not a search for scary words — Airlock parses the SQL with [sqlglot](https://sqlglot.com) and works out which real column every name refers to, through nicknames, sub-queries, and `SELECT *`. A column renamed three times is still the same column.
+2. **It looks up the rules in DataHub.** Which columns are private, which table replaced which, who owns what, which agent is allowed where. Your governance team already keeps these notes; Airlock is what finally makes them do something.
+3. **It rewrites the query before it runs.** Private columns come back covered up or empty, a retired table is swapped for its replacement, and a row limit and time limit are added so nothing runs away.
+4. **It explains itself in a format a program can read.** A person who reads "permission denied" gives up. An agent that reads *"ssn is off limits to everyone — count a non-sensitive column instead"* asks a better question. Guardrails become directions.
+5. **It records what happened.** A local audit log, and a write-back into DataHub, so the catalog builds up a record of which agent read what, when, and under which version of the rules.
 
-**One sentence:** Airlock turns your metadata catalog into a runtime security boundary for AI agents, with enforcement your CISO can audit and explanations your agent can act on.
+**In one sentence:** your data catalog stops being documentation and starts being the thing that decides what an agent can see.
+
+## Where the rules come from
+
+Nothing in Airlock says "hide the email column." That decision already exists in DataHub, made by whoever owns the data — Airlock just reads it and enforces it.
+
+**1. Someone marks the columns.** `email` and `phone` are tagged `PII`. `ssn` carries the glossary term `Classification.SSN`. This is ordinary catalog work a governance team already does.
+
+<p align="center">
+  <img src="docs/assets/datahub-tags.png" alt="The dim_users table in DataHub, showing PII tags on the email and phone columns and a Classification.SSN glossary term on ssn" width="880" />
+</p>
+
+**2. Airlock reads it and acts.** Those tags are why `email` came back hidden and `ssn` came back empty in the example above. Change the tag, and the next query behaves differently — no code change, no restart, no redeploy. That is the whole idea, and it is the thirty seconds of the demo worth watching.
+
+**3. And it writes back.** Every decision updates the dataset in DataHub: which agent read it last, the exact policy version behind the decision, and a running count of refusals. The data team sees agent activity in the tool they already use.
+
+<p align="center">
+  <img src="docs/assets/datahub-writeback.png" alt="The Properties tab of dim_users in DataHub showing Airlock's written-back values: denied attempts, last agent access, and the policy snapshot hash" width="880" />
+</p>
+
+DataHub is also how substitution works. `users_raw` is marked deprecated, and its lineage points at the certified replacement — so when an agent queries the old table, Airlock follows that edge and quietly runs the question against `dim_users` instead.
+
+<p align="center">
+  <img src="docs/assets/datahub-lineage.png" alt="Lineage in DataHub linking the deprecated users_raw table to its certified replacement dim_users" width="880" />
+</p>
+
+| What Airlock reads from DataHub | What it does with it |
+|---|---|
+| Column tags (`PII`, `Sensitive`) | Decides which columns to hide |
+| Glossary terms (`Classification.SSN`) | Decides which columns to refuse outright |
+| Deprecation + certification | Redirects a retired table to its replacement |
+| Column-level lineage | Protects an unlabelled column that was copied from a sensitive one |
+| Domains + ownership | Keeps each agent inside its own area, and names who to ask for access |
+| Schemas | Expands `SELECT *` safely, and catches columns the catalog has never seen |
+
+| What Airlock writes back to DataHub | Where it shows up |
+|---|---|
+| Last agent access, policy version, refusal count | Structured properties on the dataset |
+| A per-query access record | The dataset's documentation links |
+| Read counts per agent and per column | The dataset's Stats tab |
+| Suggested classifications for unlabelled columns | Proposals, via `airlock propose` |
+
+## What it works with
+
+Airlock sits between two things it doesn't want to be picky about: the agent and the database. It speaks [MCP](https://modelcontextprotocol.io) on one side, so any MCP client works, and it rewrites SQL on the other, so the same rules render correctly in each database's own dialect — nothing is installed in your warehouse either way.
+
+| Databases | How |
+|---|---|
+| DuckDB, Postgres, Snowflake, BigQuery | Dedicated adapters |
+| SQLite | Ships with Python — no driver to install, runs on a Raspberry Pi |
+| MySQL, Trino, ClickHouse, Redshift, Oracle, ODBC, … | `kind: dbapi` — name any [PEP 249](https://peps.python.org/pep-0249/) driver and its SQL dialect |
+
+| Agents | How |
+|---|---|
+| Claude Code, Claude Desktop, Cursor, Antigravity | `airlock mcp-config --client <name>` prints the config block to paste |
+| Any other MCP client or framework | Same three tools, same typed responses |
+| Your own script | Anthropic or any OpenAI-compatible model — see [`demo/agent_reformulation.py`](demo/agent_reformulation.py) |
+
+Details: [`docs/warehouses.md`](docs/warehouses.md) · [`docs/agent-harnesses.md`](docs/agent-harnesses.md)
 
 ## Who it's for
 
@@ -138,9 +198,9 @@ No compiler, no native build step, no platform-specific path, ever. Airlock and 
 
 ## See it work
 
-A real session, abridged. Principal `growth-agent` is scoped to the `Marketing` domain. The catalog has `email` tagged `PII` (mask), `ssn` tagged `PII.SSN` (deny), and `users_raw` deprecated in favor of `dim_users`.
+A real session. The agent is `growth-agent`, allowed to see the `Marketing` area. In DataHub, `email` is tagged `PII`, `ssn` carries the term `Classification.SSN`, and `users_raw` is deprecated with lineage pointing at `dim_users`.
 
-**Request** (from the agent, via MCP `warehouse_run_query`):
+**The agent asks for this** (over MCP, `warehouse_run_query`):
 
 ```sql
 SELECT u.name, u.email, u.ssn, o.total
@@ -148,47 +208,36 @@ FROM users_raw u JOIN orders o ON o.user_id = u.id
 ORDER BY o.total DESC LIMIT 10
 ```
 
-**Response envelope** (abridged):
+**Airlock actually runs this** — note the table swap, the covered-up email, and the emptied SSN:
 
-```json
-{
-  "status": "executed_with_modifications",
-  "request_id": "req_01J9ZK3M",
-  "rows": [ "... 10 rows, email partially masked, ssn null ..." ],
-  "executed_sql": "SELECT u.name, airlock_mask_email(u.email) AS email, NULL AS ssn, o.total FROM dim_users u JOIN orders o ON o.user_id = u.id ORDER BY o.total DESC LIMIT 10",
-  "verdicts": [
-    {
-      "code": "AIRLOCK-201", "action": "substitute",
-      "subject": "table:users_raw",
-      "reason": "users_raw is deprecated (lifecycle DEPRECATED, 2026-06-30). Certified downstream equivalent dim_users selected via lineage; all referenced columns present with compatible types.",
-      "catalog_url": "http://localhost:9002/dataset/urn:li:dataset:...users_raw"
-    },
-    {
-      "code": "AIRLOCK-110", "action": "mask",
-      "subject": "column:dim_users.email",
-      "reason": "Tagged PII; rule pii-default applies strategy partial_email for principal growth-agent.",
-      "hint": "Masked values preserve equality: GROUP BY / COUNT(DISTINCT email) stay correct."
-    },
-    {
-      "code": "AIRLOCK-120", "action": "deny_column",
-      "subject": "column:dim_users.ssn",
-      "reason": "Tagged PII.SSN; no principal may read this column through Airlock.",
-      "hint": "For cardinality, request COUNT(*) grouped by a non-sensitive column instead."
-    }
-  ],
-  "policy_snapshot": "sha256:9f2c…",
-  "audit_ref": "urn:li:document:airlock-ledger-2026-07-21"
-}
+```sql
+SELECT "u"."name" AS "name",
+       SUBSTRING(CAST("u"."email" AS TEXT), 1, 1) || '***@' ||
+       SUBSTRING(CAST("u"."email" AS TEXT), STRPOS(CAST("u"."email" AS TEXT), '@') + 1) AS "email",
+       NULL AS "ssn",
+       "o"."total" AS "total"
+FROM dim_users AS "u" JOIN "orders" AS "o" ON "o"."user_id" = "u"."id"
+ORDER BY "o"."total" DESC LIMIT 10
 ```
 
-The agent reads the verdicts, understands *why*, and (in our demo transcript) reformulates its next query without `ssn`, unprompted. That is the difference between a gateway built for humans and one built for agents.
+**And it tells the agent what it did.** Three verdicts come back with the rows, each naming the catalog fact behind it and what to do instead:
+
+| Code | What happened | Why | What to do instead |
+|---|---|---|---|
+| `AIRLOCK-201` | `users_raw` → `dim_users` | Deprecated; a certified replacement was found through lineage, with every column the query needed | Point future queries at `dim_users` |
+| `AIRLOCK-110` | `email` hidden | Tagged `PII` in DataHub | First letter and domain survive; equality is not preserved |
+| `AIRLOCK-120` | `ssn` emptied | Classified `Classification.SSN` | For counting, aggregate over a column that isn't sensitive |
+
+Each verdict also carries the dataset's catalog URL, and the response names the exact policy version behind it (`sha256:f4b5f267…`), so any decision can be traced back to the catalog as it stood at that moment.
+
+This is the difference between a gateway built for people and one built for agents: a person reads "permission denied" and gives up, while an agent reads the table above and asks a better question. `examples/` has the full envelopes, captured from real runs.
 
 ## Features
 
 **Enforcement**
 - **Semantic SQL firewall**: AST analysis, never regex. CTEs, subqueries, joins, aliases, `UNION`, window functions.
 - **In-flight column masking**: strategies: `null`, `hash` (salted SHA-256; equality-preserving, so `GROUP BY` / `COUNT DISTINCT` still work), `partial_email`, `partial_phone` (last four digits, and nothing at all below a real phone number's length — a partial mask that reveals a short value whole is not a mask), `generalize_date` (day→month), `fixed_string`. A strategy the column's type can't support degrades to `hash` rather than emitting SQL the warehouse rejects; the verdict names the strategy that actually ran, so the degrade is visible, and `hash` is never less private than what it replaced. Extensible via one Python entry point.
-- **Column denial**: hard-deny columns (e.g. `PII.SSN`) regardless of principal.
+- **Column denial**: hard-deny columns (e.g. anything carrying the `Classification.SSN` glossary term) regardless of principal.
 - **Classification propagation along column lineage**: a column derived from a masked or denied column inherits its protection, even when the derived table was never tagged. Airlock reads DataHub's fine-grained (column-level) lineage and, for any unclassified column, follows it upstream to the strictest classification it descends from — so PII that flows into a summary table is masked without waiting for anyone to re-tag it. This is the leak most static setups miss; DataHub Cloud offers it as a term-propagation automation, and Airlock does it deterministically at enforcement time on open-source DataHub. Reason codes `AIRLOCK-113` (mask) / `AIRLOCK-122` (deny) name the source column; `lineage_propagation: off` disables it.
 - **Predicate protection**: masked columns are guarded in `WHERE` / `HAVING` / `ORDER BY` / `JOIN ON` too, closing the membership-inference leak (`WHERE email='x'` proving a row exists). Block the predicate or rewrite it against the masked form — your call.
 - **Certified-table substitution**: deprecated/uncertified references redirected to certified equivalents found through lineage, gated by a schema-compatibility check. Modes: `rewrite`, `warn`, `off`.
@@ -329,7 +378,10 @@ Two places where the catalog earns its keep:
 
 ## Edge cases — and how Airlock handles them
 
-Security tooling is judged by its worst case, not its demo. This table is the contract; every row has at least one test named `test_edge_NN_<slug>`, enforced by `tools/check_edges.py`.
+Security tooling is judged by its worst case, not its demo. Every row below has at least one test named `test_edge_NN_<slug>`, and `tools/check_edges.py` fails the build if a row loses its test.
+
+<details>
+<summary><b>All 36 rows — malformed SQL, prompt injection, schema drift, DataHub outages, concurrency bursts, Ctrl+C</b></summary>
 
 | # | Edge case | Behavior | Reason code |
 |---|---|---|---|
@@ -370,13 +422,15 @@ Security tooling is judged by its worst case, not its demo. This table is the co
 | 35 | **Correlated references** (`LATERAL (SELECT u.ssn)`, correlated subquery) | A column naming an *outer* table is resolved through the enclosing scopes, so it binds to the same facts it would in the outer query. Without this a `LATERAL` body — the one clause an outer scope never revisits — returns the raw column. | `AIRLOCK-120` |
 | 36 | **Ordering and dedup oracles** (`WINDOW w AS (ORDER BY ssn)`, `DISTINCT ON (ssn)`, `FILTER (WHERE ssn = …)`) | Clause classification is deny-by-default: a column in a clause the analyzer doesn't recognize is treated as a predicate, not skipped. Sorting, partitioning, or dedup on a denied column is refused rather than silently nulled — nulling would answer with meaningless numbers instead of telling the agent what to change. | `AIRLOCK-120` / `AIRLOCK-130` |
 
+</details>
+
 ## Error message design
 
 Every error and verdict has one shape, tuned for two readers at once — the agent (structured fields) and the human tailing the log (the `reason` sentence):
 
 ```
 what happened  →  "Column dim_users.ssn was removed from your query."
-why            →  "It is tagged PII.SSN; rule pii-hard-deny applies to all principals."
+why            →  "It is classified Classification.SSN; rule pii-hard-deny applies to all principals."
 what now       →  "For cardinality questions, aggregate over non-sensitive columns."
 where to look  →  catalog_url + request_id + policy_snapshot hash
 ```
@@ -384,6 +438,11 @@ where to look  →  catalog_url + request_id + policy_snapshot hash
 House rules, enforced in review: no stack traces across the wire; no jargon without a link; no error that ends in a dead end — every message carries at least one action the reader can take.
 
 ## Configuration reference
+
+One file, checked into Git. Secrets are only ever `${ENV}` references, never values.
+
+<details>
+<summary><b>The full airlock.yaml, annotated</b></summary>
 
 ```yaml
 # airlock.yaml — checked into Git; secrets via env refs only
@@ -458,6 +517,8 @@ audit:
 `table_matching` controls how a written table name maps to a catalog dataset. `exact` (default, fail-closed) requires the name to match the catalog name; an over-qualified `catalog.schema.table` when the catalog stored `table` is treated as unknown and denied. `suffix` additionally resolves an unambiguous over-qualified name — convenient for real warehouses whose ingestion drops the prefix — and still fails closed when a bare leaf maps to more than one dataset. Opt-in, because resolving a name the catalog didn't canonically store is a small relaxation of the default.
 
 Validated on startup and by `airlock policy lint`; misconfiguration produces a named, positional error (`rules[2].action: unknown action 'masq' — did you mean 'mask'?`), not a traceback.
+
+</details>
 
 ## Performance & concurrency
 
