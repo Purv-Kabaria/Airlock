@@ -133,12 +133,15 @@ def test_warehouse_kind_without_an_adapter_is_rejected_at_config_load(
         load_config(_write(tmp_path, bad))
 
 
-# A valid DSN for each configurable kind, so make_adapter can construct without a live connection.
-_DSN_FOR_KIND = {
-    "duckdb": ":memory:",
-    "postgres": "postgresql://localhost/db",
-    "snowflake": "snowflake://u:p@acct/db/schema?warehouse=W&role=R",
-    "bigquery": "bigquery://project/dataset",
+# A buildable config for each configurable kind, so make_adapter can construct without a live
+# connection. dbapi points at the stdlib sqlite3 driver, which is always importable.
+_CONFIG_FOR_KIND = {
+    "duckdb": {"dsn": ":memory:"},
+    "postgres": {"dsn": "postgresql://localhost/db"},
+    "snowflake": {"dsn": "snowflake://u:p@acct/db/schema?warehouse=W&role=R"},
+    "bigquery": {"dsn": "bigquery://project/dataset"},
+    "sqlite": {"dsn": ":memory:"},
+    "dbapi": {"dsn": ":memory:", "driver": "sqlite3", "dialect": "sqlite"},
 }
 
 
@@ -151,7 +154,9 @@ def test_every_configurable_warehouse_kind_has_an_adapter() -> None:
     from airlock.exec.base import make_adapter
 
     kinds = get_args(WarehouseConfig.model_fields["kind"].annotation)
-    assert set(kinds) == set(_DSN_FOR_KIND), "add a DSN for a new kind so this test can build it"
+    assert set(kinds) == set(_CONFIG_FOR_KIND), (
+        "add a config for a new kind so this test can build it"
+    )
     for kind in kinds:
-        adapter = make_adapter(WarehouseConfig(kind=kind, dsn=_DSN_FOR_KIND[kind]))
+        adapter = make_adapter(WarehouseConfig(kind=kind, **_CONFIG_FOR_KIND[kind]))
         assert adapter.kind == kind

@@ -75,9 +75,25 @@ def make_adapter(config: WarehouseConfig, *, pool_size: int = 8) -> WarehouseAda
         from airlock.exec.bigquery_adapter import BigQueryAdapter
 
         return BigQueryAdapter(config.dsn)
+    if config.kind == "sqlite":
+        from airlock.exec.dbapi_adapter import make_sqlite_adapter
+
+        return make_sqlite_adapter(config.dsn, pool_size=pool_size)
+    if config.kind == "dbapi":
+        from airlock.exec.dbapi_adapter import make_dbapi_adapter
+
+        # Validated at config load: dbapi requires driver and dialect.
+        assert config.driver is not None and config.dialect is not None
+        return make_dbapi_adapter(
+            driver=config.driver,
+            dialect=config.dialect,
+            dsn=config.dsn,
+            connect_args=config.connect_args,
+            pool_size=pool_size,
+        )
     # Unreachable through config load (the kind is a Literal), but reachable when a WarehouseConfig
     # is built programmatically. Named error over a bare ValueError so the fix is in the message.
     raise ConfigError(
         f"no warehouse adapter for warehouse.kind {config.kind!r}; "
-        "supported: duckdb, postgres, snowflake, bigquery"
+        "supported: duckdb, postgres, snowflake, bigquery, sqlite, dbapi"
     )

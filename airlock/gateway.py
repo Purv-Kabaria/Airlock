@@ -79,7 +79,7 @@ class Gateway:
         self._store = store
         self._adapter = adapter
         self._sinks = sinks
-        self._dialect = config.warehouse.dialect
+        self._dialect = config.warehouse.dialect or config.warehouse.kind
         self._sem = asyncio.Semaphore(max_concurrency)
         self._cap = max_concurrency + burst
         self._inflight_count = 0

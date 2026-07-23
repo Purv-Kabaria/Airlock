@@ -86,22 +86,44 @@ class WarehouseDefaults(_Strict):
 
 
 class WarehouseConfig(_Strict):
-    # Only kinds with a shipped adapter in exec/. Accepting a kind here that make_adapter cannot
-    # build moves the failure from config load to first query, where it is far more expensive to
-    # diagnose. Add a value only in the same change that adds its adapter.
+    # Adapters shipped in exec/. The named kinds get a dedicated adapter; `dbapi` is the escape
+    # hatch - any PEP 249 (DB-API 2.0) driver, which is nearly every Python database library, so
+    # Airlock is not locked to a fixed list of warehouses. Accepting a kind here that make_adapter
+    # cannot build moves the failure from config load to first query, where it is far more
+    # expensive to diagnose; add a value only in the same change that adds its adapter.
     #
-    # Each value is also a sqlglot dialect name (see `dialect`), so the analyzer parses and the
-    # rewriter renders in the warehouse's own SQL. That the two coincide is deliberate: a kind whose
-    # name is not a sqlglot dialect would need a mapping entry below before it could be added.
-    kind: Literal["duckdb", "postgres", "snowflake", "bigquery"]
+    # For the named kinds the kind is also its sqlglot dialect, so the analyzer parses and the
+    # rewriter renders in the warehouse's own SQL. `dbapi` decouples the two: you name the driver
+    # (a Python module) and the sqlglot `dialect` separately, because a driver like `pymysql` and
+    # its dialect `mysql` do not share a name.
+    kind: Literal["duckdb", "postgres", "snowflake", "bigquery", "sqlite", "dbapi"]
     dsn: str
+    # kind=dbapi only: the DB-API driver module (e.g. "pymysql", "pyodbc", "trino.dbapi") and the
+    # sqlglot dialect to parse/render in. `connect_args` are passed through to the driver's
+    # connect(); values may be ${ENV} refs like any other config string.
+    driver: str | None = None
+    dialect: str | None = None
+    connect_args: dict[str, Any] = Field(default_factory=dict)
     defaults: WarehouseDefaults = WarehouseDefaults()
 
-    @property
-    def dialect(self) -> str:
-        """The sqlglot dialect for this warehouse. Identical to `kind` today; the indirection exists
-        so a future kind whose name differs from its dialect has one place to map it."""
-        return self.kind
+    @model_validator(mode="after")
+    def _resolve_dialect(self) -> WarehouseConfig:
+        """Fill `dialect` from `kind` for the named warehouses, and require it (plus a driver) for
+        the generic `dbapi` kind, where the two cannot be inferred from each other."""
+        if self.kind == "dbapi":
+            if not self.driver:
+                raise ValueError(
+                    "warehouse.driver is required when kind is 'dbapi' "
+                    "(the DB-API module to import, e.g. 'pymysql')"
+                )
+            if not self.dialect:
+                raise ValueError(
+                    "warehouse.dialect is required when kind is 'dbapi' "
+                    "(the sqlglot dialect, e.g. 'mysql')"
+                )
+        elif self.dialect is None:
+            self.dialect = self.kind
+        return self
 
 
 class EnforcementConfig(_Strict):
