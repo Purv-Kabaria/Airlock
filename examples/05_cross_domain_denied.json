@@ -15,7 +15,7 @@
       "subject": "table:payroll",
       "reason": "payroll is in domain 'Finance', outside growth-agent's scope.",
       "hint": "Request access from finance, or query a table within your domain.",
-      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,payroll,PROD)"
+      "catalog_url": "http://localhost:18080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,payroll,PROD)"
     },
     {
       "code": "AIRLOCK-110",
@@ -23,15 +23,7 @@
       "subject": "column:payroll.salary",
       "reason": "payroll.salary is tagged PII; masked with strategy hash.",
       "hint": "Masked values preserve equality: GROUP BY / COUNT(DISTINCT ...) remain correct.",
-      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,payroll,PROD)"
-    },
-    {
-      "code": "AIRLOCK-150",
-      "action": "limit",
-      "subject": "statement:query",
-      "reason": "A row limit of 10000 was applied.",
-      "hint": "Ask for a narrower query or an aggregate if you need the full population.",
-      "catalog_url": null
+      "catalog_url": "http://localhost:18080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,payroll,PROD)"
     }
   ],
   "policy_snapshot": "sha256:f4b5f2678b49942ec930d13d9594645a373bb344718a2a6d1e484a780d064b7a",

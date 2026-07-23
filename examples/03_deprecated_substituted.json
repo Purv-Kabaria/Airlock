@@ -3,7 +3,7 @@
   "request_id": "req_example_03",
   "principal": "growth-agent",
   "original_sql": "SELECT u.name, u.email, u.ssn, o.total FROM users_raw u JOIN orders o ON o.user_id = u.id ORDER BY o.total DESC LIMIT 10",
-  "executed_sql": "SELECT \"u\".\"name\" AS \"name\", SUBSTRING(CAST(\"u\".\"email\" AS TEXT), 1, 1) || '***@' || SPLIT_PART(CAST(\"u\".\"email\" AS TEXT), '@', 2) AS \"email\", NULL AS \"ssn\", \"o\".\"total\" AS \"total\" FROM dim_users AS \"u\" JOIN \"orders\" AS \"o\" ON \"o\".\"user_id\" = \"u\".\"id\" ORDER BY \"o\".\"total\" DESC LIMIT 10",
+  "executed_sql": "SELECT \"u\".\"name\" AS \"name\", SUBSTRING(CAST(\"u\".\"email\" AS TEXT), 1, 1) || '***@' || SUBSTRING(CAST(\"u\".\"email\" AS TEXT), STRPOS(CAST(\"u\".\"email\" AS TEXT), '@') + 1) AS \"email\", NULL AS \"ssn\", \"o\".\"total\" AS \"total\" FROM dim_users AS \"u\" JOIN \"orders\" AS \"o\" ON \"o\".\"user_id\" = \"u\".\"id\" ORDER BY \"o\".\"total\" DESC LIMIT 10",
   "rows": [
     {
       "name": "Ada Lovelace",
@@ -51,7 +51,7 @@
       "subject": "table:users_raw",
       "reason": "users_raw is deprecated (lifecycle DEPRECATED); certified equivalent dim_users selected via lineage with all referenced columns present.",
       "hint": "Point future queries at dim_users to avoid the redirect.",
-      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,users_raw,PROD)"
+      "catalog_url": "http://localhost:18080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,users_raw,PROD)"
     },
     {
       "code": "AIRLOCK-110",
@@ -59,7 +59,7 @@
       "subject": "column:dim_users.email",
       "reason": "dim_users.email is tagged PII; masked with strategy partial_email.",
       "hint": "Only the first character and domain survive; equality is not preserved.",
-      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
+      "catalog_url": "http://localhost:18080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
     },
     {
       "code": "AIRLOCK-120",
@@ -67,7 +67,7 @@
       "subject": "column:dim_users.ssn",
       "reason": "dim_users.ssn is classified Classification.SSN; it is nulled for every principal.",
       "hint": "For cardinality, aggregate over a non-sensitive column instead.",
-      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
+      "catalog_url": "http://localhost:18080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
     }
   ],
   "policy_snapshot": "sha256:f4b5f2678b49942ec930d13d9594645a373bb344718a2a6d1e484a780d064b7a",

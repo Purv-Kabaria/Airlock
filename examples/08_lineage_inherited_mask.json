@@ -3,26 +3,26 @@
   "request_id": "req_example_08",
   "principal": "growth-agent",
   "original_sql": "SELECT user_id, contact, signup_month FROM user_report",
-  "executed_sql": "SELECT \"user_report\".\"user_id\" AS \"user_id\", MD5('demo-salt' || CAST(\"user_report\".\"contact\" AS TEXT)) AS \"contact\", \"user_report\".\"signup_month\" AS \"signup_month\" FROM \"user_report\" AS \"user_report\" LIMIT 10000",
+  "executed_sql": "SELECT \"user_report\".\"user_id\" AS \"user_id\", MD5('demo-not-secret-salt' || CAST(\"user_report\".\"contact\" AS TEXT)) AS \"contact\", \"user_report\".\"signup_month\" AS \"signup_month\" FROM \"user_report\" AS \"user_report\" LIMIT 10000",
   "rows": [
     {
       "user_id": 1,
-      "contact": "dedc45025b79f434a5519d96d9a0ddef",
+      "contact": "e87c07d3cfe6481f3d1b01e5618673fa",
       "signup_month": "2026-01"
     },
     {
       "user_id": 2,
-      "contact": "7eb1dc783f398cc3502c1abeb25a9097",
+      "contact": "0ad52ce5ddcc300bf3659442c2188114",
       "signup_month": "2026-02"
     },
     {
       "user_id": 3,
-      "contact": "f7108e8802cdead4b602d67718e280e9",
+      "contact": "a57f453a336c4d781516ae93cd592a24",
       "signup_month": "2026-03"
     },
     {
       "user_id": 4,
-      "contact": "d7f400318478fd987bd51b5e199b7624",
+      "contact": "250833b8f343040e9d0fc8b20c53169a",
       "signup_month": "2026-03"
     }
   ],
@@ -40,7 +40,7 @@
       "subject": "column:user_report.contact",
       "reason": "user_report.contact carries no classification, but derives from dim_users.email via column lineage; masked with strategy hash.",
       "hint": "Classify user_report.contact in DataHub to make this explicit. Masked values preserve equality: GROUP BY / COUNT(DISTINCT ...) remain correct.",
-      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,user_report,PROD)"
+      "catalog_url": "http://localhost:18080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,user_report,PROD)"
     },
     {
       "code": "AIRLOCK-150",

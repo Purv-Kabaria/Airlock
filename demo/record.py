@@ -292,6 +292,24 @@ def restore_status_tag() -> None:
         )
 
 
+def _for_screen(value: object) -> str:
+    """Shorten a structured-property value so the panel reads at 720p.
+
+    Display only - what DataHub stores is untouched. Counts arrive as floats because the property
+    is typed `datahub.number`, and a full sha256 wraps mid-hash inside the panel, which reads as a
+    rendering bug on camera. Hashes are shortened the same way `airlock coverage` shortens them.
+    """
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    text = str(value)
+    if text.startswith("sha256:"):
+        return text[: len("sha256:") + 12]
+    stamp, sep, rest = text.partition(" by ")
+    if sep and "T" in stamp:
+        return f"{stamp.split('.')[0]}Z by {rest}"
+    return text
+
+
 def show_writeback() -> None:
     """Read the airlock.* structured properties back off dim_users and render them - proof the
     loop closed inside DataHub itself."""
@@ -308,9 +326,8 @@ def show_writeback() -> None:
     else:
         for prop in aspect.properties:
             name = prop.propertyUrn.split(":")[-1]
-            value = prop.values[0] if prop.values else ""
             lines.append(f"  {name:<28}", style="bold cyan")
-            lines.append(f"{value}\n", style="white")
+            lines.append(f"{_for_screen(prop.values[0] if prop.values else '')}\n", style="white")
     console.print(
         Panel(
             lines,
@@ -544,7 +561,6 @@ def _play(pace: Pacer) -> None:
             padding=(1, 6),
         )
     )
-    return 0
 
 
 if __name__ == "__main__":

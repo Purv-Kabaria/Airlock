@@ -15,15 +15,7 @@
       "subject": "column:dim_users.email",
       "reason": "dim_users.email is masked; filtering on it would leak row membership.",
       "hint": "Remove the predicate, or set predicate_policy: transform to compare masked values.",
-      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
-    },
-    {
-      "code": "AIRLOCK-150",
-      "action": "limit",
-      "subject": "statement:query",
-      "reason": "A row limit of 10000 was applied.",
-      "hint": "Ask for a narrower query or an aggregate if you need the full population.",
-      "catalog_url": null
+      "catalog_url": "http://localhost:18080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
     }
   ],
   "policy_snapshot": "sha256:f4b5f2678b49942ec930d13d9594645a373bb344718a2a6d1e484a780d064b7a",

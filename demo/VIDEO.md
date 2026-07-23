@@ -187,7 +187,17 @@ hang or wander mid-recording. Record it separately and cut it in, or link it.
 `python demo/agent_reformulation.py` connects a real AI agent to Airlock and asks it to look up
 someone by social security number. Airlock refuses. The agent reads the refusal and asks a different
 question that works. It runs on Anthropic or any OpenAI-compatible service, so the model is your
-choice.
+choice — set one of these and it picks the provider itself:
+
+| Variable | For |
+|---|---|
+| `ANTHROPIC_API_KEY` | Claude |
+| `OPENAI_API_KEY` | OpenAI |
+| `AIRLOCK_AGENT_BASE_URL` | Any OpenAI-compatible server (Together, Groq, local Ollama or vLLM) |
+| `AIRLOCK_AGENT_MODEL` | Override the default model |
+
+With none of them set it exits with a named error and changes nothing, so a missing key can't
+surprise you mid-take.
 
 > This is a real AI agent, connected the same way a coding assistant would be. It asks for someone
 > by social security number. Turned down. It reads the reason, understands what it's allowed to ask

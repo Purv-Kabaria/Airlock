@@ -3,7 +3,7 @@
   "request_id": "req_example_02",
   "principal": "growth-agent",
   "original_sql": "SELECT name, email, phone FROM dim_users LIMIT 5",
-  "executed_sql": "SELECT \"dim_users\".\"name\" AS \"name\", SUBSTRING(CAST(\"dim_users\".\"email\" AS TEXT), 1, 1) || '***@' || SPLIT_PART(CAST(\"dim_users\".\"email\" AS TEXT), '@', 2) AS \"email\", '***-' || RIGHT(CAST(\"dim_users\".\"phone\" AS TEXT), 4) AS \"phone\" FROM \"dim_users\" AS \"dim_users\" LIMIT 5",
+  "executed_sql": "SELECT \"dim_users\".\"name\" AS \"name\", SUBSTRING(CAST(\"dim_users\".\"email\" AS TEXT), 1, 1) || '***@' || SUBSTRING(CAST(\"dim_users\".\"email\" AS TEXT), STRPOS(CAST(\"dim_users\".\"email\" AS TEXT), '@') + 1) AS \"email\", CASE WHEN LENGTH(CAST(\"dim_users\".\"phone\" AS TEXT)) >= 7 THEN '***-' || RIGHT(CAST(\"dim_users\".\"phone\" AS TEXT), 4) ELSE '***' END AS \"phone\" FROM \"dim_users\" AS \"dim_users\" LIMIT 5",
   "rows": [
     {
       "name": "Ada Lovelace",
@@ -40,7 +40,7 @@
       "subject": "column:dim_users.email",
       "reason": "dim_users.email is tagged PII; masked with strategy partial_email.",
       "hint": "Only the first character and domain survive; equality is not preserved.",
-      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
+      "catalog_url": "http://localhost:18080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
     },
     {
       "code": "AIRLOCK-110",
@@ -48,7 +48,7 @@
       "subject": "column:dim_users.phone",
       "reason": "dim_users.phone is tagged PII; masked with strategy partial_phone.",
       "hint": "Only the last four digits survive; equality is not preserved.",
-      "catalog_url": "http://localhost:8080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
+      "catalog_url": "http://localhost:18080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
     }
   ],
   "policy_snapshot": "sha256:f4b5f2678b49942ec930d13d9594645a373bb344718a2a6d1e484a780d064b7a",
