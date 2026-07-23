@@ -134,7 +134,7 @@ If your agent already talks to a Postgres or DuckDB MCP server or connection str
 
 ### It runs on whatever laptop a judge owns
 
-No compiler, no native build step, no platform-specific path, ever. Airlock and its dependencies install from prebuilt universal wheels everywhere (sqlglot is pure Python; DuckDB ships wheels for all our targets). CI runs the full test suite *and boots the complete demo stack* on Ubuntu, macOS, and Windows for every commit — cross-platform is verified, not hoped for.
+No compiler, no native build step, no platform-specific path, ever. Airlock and its dependencies install from prebuilt universal wheels everywhere (sqlglot is pure Python; DuckDB ships wheels for all our targets). CI runs the full test suite *and boots the complete demo stack* on Ubuntu, macOS, and Windows for every commit — cross-platform is verified, not hoped for. A warehouse driver is optional weight, not a floor: the SQLite backend uses Python's standard library, so a gateway can run against a local database on a Raspberry Pi with nothing to compile or install. Decisions add low single-digit milliseconds — parse, resolve, decide, and rewrite share one AST walk on the hot path, and repeated queries are served from a decision cache — so the box does not have to be a big one.
 
 ## See it work
 
@@ -249,7 +249,7 @@ flowchart LR
     end
     subgraph Sources of truth
         DH[("DataHub<br/>tags · glossary · lineage<br/>lifecycle · domains · schemas")]
-        WH[("Warehouse<br/>DuckDB · Postgres")]
+        WH[("Warehouse<br/>DuckDB · Postgres · Snowflake<br/>BigQuery · SQLite · any DB-API")]
     end
     A1 -- MCP --> MCP --> PDP
     PDP <--> RW
@@ -316,7 +316,7 @@ airlock/
 │   ├── decide.py   #   pure decision fn: (ResolvedQuery, Principal,
 │   │               #   PolicyGraph) → list[Verdict] — no I/O in this file
 │   └── verdicts.py #   Verdict, ReasonCode, envelope construction
-├── exec/           # warehouse adapters (duckdb, postgres) + pooling, timeouts
+├── exec/           # warehouse adapters (duckdb, postgres, snowflake, bigquery, sqlite, any DB-API driver) + pooling, timeouts
 ├── audit/          # JSONL sink, OTel sink, DataHub write-back sink
 ├── masking/        # strategy registry (entry-point extensible)
 └── cli/            # init, serve, check, coverage, tail, explain, policy, doctor
@@ -396,9 +396,15 @@ datahub:
     stale_policy: fail_closed   # fail_closed | serve_stale_readonly
 
 warehouse:
-  kind: duckdb                  # duckdb | postgres
+  kind: duckdb                  # duckdb | postgres | snowflake | bigquery | sqlite | dbapi
   dsn: ${WAREHOUSE_DSN}
   defaults: { row_limit: 10000, statement_timeout: 30s }
+  # kind: dbapi drives any PEP 249 driver — name the module and the sqlglot dialect:
+  #   kind: dbapi
+  #   driver: pymysql             # or pyodbc, trino.dbapi, clickhouse_driver, redshift_connector, ...
+  #   dialect: mysql              # the sqlglot dialect the analyzer parses and the rewriter renders in
+  #   connect_args: { ssl: true } # passed straight to the driver's connect()
+  # Per-backend DSN examples: docs/warehouses.md
 
 enforcement:
   mode: enforce                 # enforce | monitor
@@ -489,8 +495,15 @@ UI and enforcement changes on the next refresh — there is nothing else to upda
 
 **Nothing is installed in the warehouse.** Native masking policies are DDL: per-warehouse, per-
 dialect, applied by someone with elevated rights, and invisible from outside the database. Airlock
-rewrites the query in flight, so the same policy covers DuckDB and Postgres identically and leaves
-no footprint to drift or migrate.
+rewrites the query in flight, so one policy covers every warehouse identically and leaves no
+footprint to drift or migrate. Because the rewrite is the enforcement, adding a warehouse is a
+connection, not a policy port: DuckDB, Postgres, Snowflake, and BigQuery have dedicated adapters,
+and `kind: dbapi` drives any [PEP 249](https://peps.python.org/pep-0249/) driver — MySQL, Trino,
+ClickHouse, Redshift, ODBC, and the rest — by naming the module and the sqlglot dialect. The mask
+SQL is generated per dialect, verified across nine of them, so the same rule renders `TO_HEX(MD5())`
+on BigQuery and `SUBSTRING(... FOR 1)` on Postgres without a line of adapter-specific policy. SQLite
+ships with Python and needs no dependency, which makes it the zero-install warehouse for a laptop, a
+CI box, or an ARM device — and the backend these adapters are tested against end to end.
 
 **The denial is addressed to a machine.** This is the part with no equivalent elsewhere. Existing
 tools are built for humans in BI tools: they mask silently or return an error meant to be read by a
@@ -499,6 +512,10 @@ Airlock returns a structured envelope — a stable `AIRLOCK-NNN` reason code, th
 reason, and at least one actionable hint — so the agent can reformulate on the next call instead of
 guessing. The test suite pins exactly that loop (`tests/unit/test_reformulation.py`): a refused
 query whose hint is actionable, then the reformulation a reader of that hint would send, executing.
+And because Airlock speaks MCP rather than any one vendor's API, the agent can be anything that does:
+[`demo/agent_reformulation.py`](demo/agent_reformulation.py) drives the live loop with a real model
+on Anthropic or any OpenAI-compatible endpoint (OpenAI, Together, Groq, a local Ollama or vLLM) —
+same gateway, same envelope, your choice of model.
 
 Where those tools are ahead: row-level security, mature policy authoring UIs, many more warehouse
 connectors, and years of production mileage. If you need row-level policy today, use one of them —
@@ -523,7 +540,7 @@ design).
 
 ## Roadmap
 
-Row-level rules from catalog attributes · result-set DLP as a pluggable post-flight scanner · Snowflake/BigQuery native adapters · policy simulation against historical query logs (`airlock replay`) · wrap-mode for governing third-party MCP servers · a DataHub Action that triggers snapshot refresh on classification change (push, not poll — shipped as a proposal in [`contrib/`](contrib/)).
+Row-level rules from catalog attributes · result-set DLP as a pluggable post-flight scanner · native cancellation for DB-API drivers that expose it · policy simulation against historical query logs (`airlock replay`) · wrap-mode for governing third-party MCP servers · a DataHub Action that triggers snapshot refresh on classification change (push, not poll — shipped as a proposal in [`contrib/`](contrib/)).
 
 ## For hackathon judges
 

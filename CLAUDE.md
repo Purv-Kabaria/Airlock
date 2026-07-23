@@ -25,7 +25,7 @@ Submission hard requirements to never forget: public repo, **Apache 2.0 LICENSE 
 - **sqlglot** for parsing/qualification/rewriting. Before writing analyzer code, read: https://sqlglot.com/sqlglot.html and the AST primer at https://github.com/tobymao/sqlglot/blob/main/posts/ast_primer.md . Use `qualify` and scope traversal from `sqlglot.optimizer` — do not hand-roll alias resolution.
 - **MCP Python SDK / FastMCP** for the server layer: https://raw.githubusercontent.com/modelcontextprotocol/python-sdk/main/README.md . Protocol spec sitemap: https://modelcontextprotocol.io/sitemap.xml (fetch pages with `.md` suffix).
 - **DataHub**: Python SDK (`acryl-datahub`) for snapshot compilation and write-back. Docs to consult: https://docs.datahub.com/docs/features/feature-guides/mcp , https://docs.datahub.com/docs/api/datahub-apis , https://docs.datahub.com/docs/metadata-modeling/metadata-model . Structured properties and documents are the write-back surfaces.
-- **DuckDB** as the primary demo warehouse adapter; Postgres second. Snowflake only if time remains.
+- **DuckDB** is the demo warehouse. Dedicated adapters also ship for Postgres, Snowflake, and BigQuery; `kind: dbapi` drives any PEP 249 driver (SQLite is the stdlib case, tested live). One masking layer renders per sqlglot dialect, so adding a warehouse is a connection, not a policy port — do not write per-warehouse masking logic.
 - **pydantic v2** for all boundary models; **pytest + hypothesis** for tests; **ruff** (lint + format) and **mypy --strict** in CI.
 - **Typer** for the CLI; **rich** for `airlock tail` output.
 
