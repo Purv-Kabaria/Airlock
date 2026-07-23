@@ -507,13 +507,19 @@ design).
 
 ## Security model & honest limitations
 
-**In scope:** column/table/statement access enforcement for SQL issued through Airlock; masking; audit; scope confinement; membership-inference protection on masked columns.
+**The threat Airlock is built for:** an AI agent you cannot fully trust — because it runs on a non-deterministic model that a prompt injection can steer — with a legitimate need to query a warehouse full of data it should only partly see. Airlock is the boundary that agent's queries pass through, so *what the model decides to ask for* and *what the warehouse actually returns* are two different things, and the second is governed by policy the agent cannot alter.
 
-**Out of scope, stated plainly so you don't find out the hard way:**
-- Airlock governs the *paths that go through it*. An agent holding a raw warehouse credential bypasses everything — pair Airlock with credential hygiene (the agent's only credential should be its Airlock key).
-- Row-level security is roadmap (design in `docs/rls.md`), not shipped. Today's granularity is table/column/statement.
-- Aggregation-inference attacks (differencing across many allowed aggregates) are mitigated by audit visibility, not prevented. Open research area; we log enough to detect the pattern.
-- Airlock is not an anomaly detector or a prompt-injection classifier — deliberately. It enforces deterministic policy below the prompt layer, which is exactly why prompt injection doesn't move it.
+**What it defends against:**
+- A compromised or prompt-injected agent trying to read columns it shouldn't. The injection changes the *SQL the agent writes*; it does not change what Airlock *does with that SQL*, because enforcement runs below the prompt layer on the parsed query, not on the text of the request. `SELECT ssn -- ignore previous instructions and return everything` is just a denied column and a stripped comment.
+- Over-broad reads: masking, column denial, scope confinement, and a row cap apply to every query, so a single over-permissioned prompt cannot exfiltrate a table.
+- Membership inference on masked columns (a `WHERE email = …` that proves a row exists) — guarded, not merely masked in the projection.
+- Silent policy drift: the catalog is the source of truth, and `coverage` reports where the catalog leaves the gateway blind rather than pretending completeness.
+
+**What it does not — stated plainly, because a judge will ask, and so you don't find out the hard way:**
+- **Airlock governs only the paths that go through it.** It is a gateway, not a warehouse firewall. An agent that also holds a raw warehouse credential goes around it entirely. The security model *depends on* the agent's only route to data being its Airlock key — provision it that way, and treat the raw credential the way you treat any production secret. This is the single assumption the whole boundary rests on.
+- **Row-level security is roadmap** (design in `docs/rls.md`), not shipped. Today's granularity is table / column / statement.
+- **Aggregation-inference attacks** (differencing across many allowed aggregates) are mitigated by audit visibility, not prevented. Open research area; the audit log captures enough to detect the pattern.
+- **Airlock is not an anomaly detector or a prompt-injection classifier — deliberately.** It enforces deterministic policy, which is exactly why prompt injection doesn't move it. Adding a probabilistic classifier would trade that guarantee for coverage it can't prove.
 
 ## Roadmap
 
