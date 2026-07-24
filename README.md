@@ -524,18 +524,18 @@ Validated on startup and by `airlock policy lint`; misconfiguration produces a n
 
 ## Performance & concurrency
 
-Budgets enforced by CI (`make bench`, `make load`), not aspirations. A regression fails the build; measured numbers ship per release in `docs/benchmarks.md`.
+Two of these are hard CI gates: a regression fails the build. `make bench` measures decision overhead against the corpus and exits non-zero over budget (the numbers ship in [`docs/benchmarks.md`](docs/benchmarks.md), regenerated each run); `make load` drives 50 sustained principals and a 200-burst and fails on any error or a dirty rejection. The rest are design targets the architecture is built for but CI does not yet assert — labelled as such rather than dressed up as gates.
 
-| Budget | Target |
-|---|---|
-| Decision overhead (parse + resolve + decide + rewrite), p95 | **< 10 ms** on the benchmark corpus |
-| Repeated query (decision cache hit), p95 | **< 1 ms** |
-| Cold start → `/readyz` (snapshot already cached) | **< 5 s**; first-ever compile reported separately |
-| Sustained concurrency | **50 agents**, zero errors, decision p95 < 25 ms |
-| Burst | **200 at once**: bounded queue, zero drops below the cap, clean `AIRLOCK-440` above it |
-| Steady-state memory | **< 300 MB** with the demo catalog loaded |
+| Budget | Target | CI-gated |
+|---|---|---|
+| Decision overhead (parse + resolve + decide + rewrite), p95 | **< 10 ms** on the benchmark corpus | yes — `make bench` |
+| Sustained concurrency | **50 agents**, zero errors | yes — `make load` |
+| Burst | **200 at once**: bounded queue, zero drops below the cap, clean `AIRLOCK-440` above it | yes — `make load` |
+| Repeated query (decision cache hit), p95 | **< 1 ms** | design target |
+| Cold start → `/readyz` (snapshot already cached) | **< 5 s** | design target |
+| Steady-state memory | **< 300 MB** with the demo catalog loaded | design target |
 
-How those numbers happen:
+How the gated numbers happen:
 
 - **Fully async request path.** The MCP layer is asyncio end-to-end; warehouse calls run on pooled connections off the event loop. Nothing blocks.
 - **Lock-free policy reads.** A snapshot swap is one atomic pointer exchange; every request pins the snapshot it started with. A thousand concurrent decisions share zero locks.
