@@ -212,8 +212,10 @@ ORDER BY o.total DESC LIMIT 10
 
 ```sql
 SELECT "u"."name" AS "name",
-       SUBSTRING(CAST("u"."email" AS TEXT), 1, 1) || '***@' ||
-       SUBSTRING(CAST("u"."email" AS TEXT), STRPOS(CAST("u"."email" AS TEXT), '@') + 1) AS "email",
+       CASE WHEN STRPOS(CAST("u"."email" AS TEXT), '@') > 0
+            THEN SUBSTRING(CAST("u"."email" AS TEXT), 1, 1) || '***@' ||
+                 SUBSTRING(CAST("u"."email" AS TEXT), STRPOS(CAST("u"."email" AS TEXT), '@') + 1)
+            ELSE '***' END AS "email",
        NULL AS "ssn",
        "o"."total" AS "total"
 FROM dim_users AS "u" JOIN "orders" AS "o" ON "o"."user_id" = "u"."id"
@@ -392,7 +394,7 @@ Security tooling is judged by its worst case, not its demo. Every row below has 
 | 5 | **Masked column in `ORDER BY` / `GROUP BY`** | Hash preserves equality → `GROUP BY` correct; `ORDER BY` allowed but flagged as meaningless in the hint. | `AIRLOCK-111` |
 | 6 | **Aggregates over denied columns** (`COUNT(ssn)`) | Denied; hint suggests `COUNT(*)` or aggregation over non-sensitive keys. | `AIRLOCK-121` |
 | 7 | **CTEs, nested subqueries, aliases** | Full scope resolution before matching; a PII column through three aliases still resolves to its URN. Property-tested. | — |
-| 8 | **`UNION` with mixed classifications** | Column-position merge takes the *strictest* classification of the branches. | `AIRLOCK-112` |
+| 8 | **`UNION` with mixed classifications** | Each branch is masked or denied by its own columns' facts, so a sensitive value is protected in whatever branch it appears. A column *derived* from a `UNION` (wrapped in an outer subquery, then filtered or aggregated) takes the strictest branch via lineage. | `AIRLOCK-110` / `AIRLOCK-130` |
 | 9 | **DDL / DML / multi-statement input** | Statement-class allowlist; default read-only. Multi-statement rejected whole (no partial execution). | `AIRLOCK-404` |
 | 10 | **DataHub unreachable at query time** | Non-event: decisions never call DataHub. Background refresh fails and alerts. | — |
 | 11 | **DataHub down past the staleness budget** | Snapshot older than `max_staleness` (default 24h) → degrade per `stale_policy`: `fail_closed` (default) or `serve_stale_readonly` with a warning verdict on every response. | `AIRLOCK-410` |
@@ -413,7 +415,7 @@ Security tooling is judged by its worst case, not its demo. Every row below has 
 | 26 | **Ctrl+C on the gateway** | In-flight statements cancelled cleanly; pending audit writes drained within a deadline; a second Ctrl+C hard-stops. Audit writes are line-atomic. | — |
 | 27 | **Natural language sent as SQL** (`run_query("show me top customers")`) | Detected pre-parse; friendly error explains the tool takes SQL and lists the principal's visible tables. Recovers in one turn. | `AIRLOCK-406` |
 | 28 | **Trailing semicolons, odd whitespace, comments, non-ASCII literals** | Normalized before analysis; comments stripped *prior* to matching, so nothing hides in them. Emoji in a string literal is just data. | — |
-| 29 | **`EXPLAIN` / `SET` / `SHOW` / transactions / prepared statements** | Statement-class table: `EXPLAIN` runs against the *rewritten* query (inspect plans, not bypass masks); session/transaction control denied with the config key that would allow it. | `AIRLOCK-404` |
+| 29 | **`EXPLAIN` / `SET` / `SHOW` / transactions / prepared statements** | Each is its own statement class, none in the default `[select]` allowlist, so all are denied with the config key that would grant them named in the hint. (`EXPLAIN` is not special-cased to run against the rewritten query — it is refused like any other non-`SELECT` class.) | `AIRLOCK-404` |
 | 30 | **Pathological input** (1,000-deep nesting, 100k-item `IN`, megabyte query) | Parser depth and size limits reject before resource exhaustion, with the limit named. Not DoS-able through one weird query. | `AIRLOCK-405` |
 | 31 | **Setup friction** (port taken, `up.py` twice, stale containers, Docker down) | The launcher self-heals (idempotent re-run, alternate ports) or names the exact fix; `demo/reset.py` guarantees a clean slate. | — |
 | 32 | **Dynamic column selectors** (`SELECT COLUMNS('.*') FROM t`, DuckDB) | Fail closed: a `COLUMNS(...)` selector isn't expanded to concrete columns, so it's never classified — denied whole rather than returned raw. | `AIRLOCK-407` |

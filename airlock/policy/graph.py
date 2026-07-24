@@ -342,6 +342,11 @@ def _hash_graph(
             "statement_classes": sorted(enforcement.statement_classes),
             "predicate_policy": enforcement.predicate_policy,
             "substitution": enforcement.substitution,
+            # Both change which columns are governed and which tables resolve, so both must move the
+            # hash — else the decision cache (keyed on it) serves a plan the current policy would not
+            # produce, and turning propagation on would leave a derived PII column cached in the clear.
+            "lineage_propagation": enforcement.lineage_propagation,
+            "table_matching": enforcement.table_matching,
             "default_row_limit": enforcement.default_row_limit,
             "default_statement_timeout": enforcement.default_statement_timeout,
         },

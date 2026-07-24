@@ -140,15 +140,27 @@ def test_edge_07_pii_through_ctes_and_aliases(graph) -> None:
 
 
 # 8 ---------------------------------------------------------------------------------
-def test_edge_08_union_takes_strictest(graph) -> None:
-    resolved, verdicts = _verdicts(
-        graph, "SELECT email FROM dim_users UNION SELECT name FROM dim_users"
-    )
+def test_edge_08_union_masks_each_branch(graph) -> None:
+    # Each branch is masked by its own columns' facts: the PII branch's email is masked wherever it
+    # sits in the union, regardless of which position a benign column occupies in the other branch.
     from airlock.analyzer.rewrite import rewrite
 
-    result = rewrite(resolved, graph.principal("growth-agent"), graph)
-    assert "***" in result.executed_sql  # the PII branch is masked
-    assert any(v.code == "AIRLOCK-110" for v in verdicts)
+    for sql in (
+        "SELECT email FROM dim_users UNION SELECT name FROM dim_users",
+        "SELECT name FROM dim_users UNION SELECT email FROM dim_users",  # sensitive in 2nd branch
+    ):
+        resolved, verdicts = _verdicts(graph, sql)
+        result = rewrite(resolved, graph.principal("growth-agent"), graph)
+        assert "***" in result.executed_sql  # the PII branch is masked either way
+        assert any(v.code == "AIRLOCK-110" for v in verdicts)
+
+    # A column *derived* from a union, then filtered, takes the strictest branch via lineage tracing.
+    _, guarded = _verdicts(
+        graph,
+        "SELECT c FROM (SELECT email AS c FROM dim_users UNION ALL SELECT name AS c FROM dim_users) "
+        "WHERE c = 'x'",
+    )
+    assert any(v.code == "AIRLOCK-130" for v in guarded)  # predicate guard from the masked branch
 
 
 # 9 ---------------------------------------------------------------------------------

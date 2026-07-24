@@ -3,7 +3,7 @@
   "request_id": "req_example_07",
   "principal": "growth-agent",
   "original_sql": "WITH ranked AS (SELECT name, email, ROW_NUMBER() OVER (ORDER BY signup_date DESC) AS rn FROM dim_users) SELECT name, email FROM ranked WHERE rn <= 3",
-  "executed_sql": "WITH \"ranked\" AS (SELECT \"dim_users\".\"name\" AS \"name\", SUBSTRING(CAST(\"dim_users\".\"email\" AS TEXT), 1, 1) || '***@' || SUBSTRING(CAST(\"dim_users\".\"email\" AS TEXT), STRPOS(CAST(\"dim_users\".\"email\" AS TEXT), '@') + 1) AS \"email\", ROW_NUMBER() OVER (ORDER BY \"dim_users\".\"signup_date\" DESC) AS \"rn\" FROM \"dim_users\" AS \"dim_users\") SELECT \"ranked\".\"name\" AS \"name\", \"ranked\".\"email\" AS \"email\" FROM \"ranked\" AS \"ranked\" WHERE \"ranked\".\"rn\" <= 3 LIMIT 10000",
+  "executed_sql": "WITH \"ranked\" AS (SELECT \"dim_users\".\"name\" AS \"name\", CASE WHEN STRPOS(CAST(\"dim_users\".\"email\" AS TEXT), '@') > 0 THEN SUBSTRING(CAST(\"dim_users\".\"email\" AS TEXT), 1, 1) || '***@' || SUBSTRING(CAST(\"dim_users\".\"email\" AS TEXT), STRPOS(CAST(\"dim_users\".\"email\" AS TEXT), '@') + 1) ELSE '***' END AS \"email\", ROW_NUMBER() OVER (ORDER BY \"dim_users\".\"signup_date\" DESC) AS \"rn\" FROM \"dim_users\" AS \"dim_users\") SELECT \"ranked\".\"name\" AS \"name\", \"ranked\".\"email\" AS \"email\" FROM \"ranked\" AS \"ranked\" WHERE \"ranked\".\"rn\" <= 3 LIMIT 10000",
   "rows": [
     {
       "name": "Bo Diddley",
@@ -42,6 +42,6 @@
       "catalog_url": null
     }
   ],
-  "policy_snapshot": "sha256:f4b5f2678b49942ec930d13d9594645a373bb344718a2a6d1e484a780d064b7a",
+  "policy_snapshot": "sha256:fcadfefc1b983b8b2b2fc163ec2d842143d9a4f98ee841077daa15b499d316ad",
   "audit_ref": null
 }

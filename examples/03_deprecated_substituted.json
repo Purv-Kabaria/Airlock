@@ -3,7 +3,7 @@
   "request_id": "req_example_03",
   "principal": "growth-agent",
   "original_sql": "SELECT u.name, u.email, u.ssn, o.total FROM users_raw u JOIN orders o ON o.user_id = u.id ORDER BY o.total DESC LIMIT 10",
-  "executed_sql": "SELECT \"u\".\"name\" AS \"name\", SUBSTRING(CAST(\"u\".\"email\" AS TEXT), 1, 1) || '***@' || SUBSTRING(CAST(\"u\".\"email\" AS TEXT), STRPOS(CAST(\"u\".\"email\" AS TEXT), '@') + 1) AS \"email\", NULL AS \"ssn\", \"o\".\"total\" AS \"total\" FROM dim_users AS \"u\" JOIN \"orders\" AS \"o\" ON \"o\".\"user_id\" = \"u\".\"id\" ORDER BY \"o\".\"total\" DESC LIMIT 10",
+  "executed_sql": "SELECT \"u\".\"name\" AS \"name\", CASE WHEN STRPOS(CAST(\"u\".\"email\" AS TEXT), '@') > 0 THEN SUBSTRING(CAST(\"u\".\"email\" AS TEXT), 1, 1) || '***@' || SUBSTRING(CAST(\"u\".\"email\" AS TEXT), STRPOS(CAST(\"u\".\"email\" AS TEXT), '@') + 1) ELSE '***' END AS \"email\", NULL AS \"ssn\", \"o\".\"total\" AS \"total\" FROM dim_users AS \"u\" JOIN \"orders\" AS \"o\" ON \"o\".\"user_id\" = \"u\".\"id\" ORDER BY \"o\".\"total\" DESC LIMIT 10",
   "rows": [
     {
       "name": "Ada Lovelace",
@@ -70,6 +70,6 @@
       "catalog_url": "http://localhost:18080/dataset/urn:li:dataset:(urn:li:dataPlatform:duckdb,dim_users,PROD)"
     }
   ],
-  "policy_snapshot": "sha256:f4b5f2678b49942ec930d13d9594645a373bb344718a2a6d1e484a780d064b7a",
+  "policy_snapshot": "sha256:fcadfefc1b983b8b2b2fc163ec2d842143d9a4f98ee841077daa15b499d316ad",
   "audit_ref": null
 }

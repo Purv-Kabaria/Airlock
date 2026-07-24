@@ -19,7 +19,9 @@ class ReasonCode(StrEnum):
     # -- 1xx: column-level masking and column handling --------------------------------
     MASK = "AIRLOCK-110"  # column masked because it carries a mask-classified tag/term
     MASK_ORDER_NOTE = "AIRLOCK-111"  # masked column used in ORDER BY: allowed, but meaningless
-    UNION_STRICTEST = "AIRLOCK-112"  # union column adopts the strictest branch classification
+    # 112 is intentionally unallocated: a UNION masks each branch's columns by their own facts, and
+    # a column *derived* from a UNION takes the strictest branch via lineage (113/122/130). There is
+    # no separate "union column" verdict, so no code is minted for one.
     MASK_LINEAGE = (
         "AIRLOCK-113"  # untagged column masked: derives from a masked column (col lineage)
     )
@@ -70,7 +72,6 @@ class ReasonCode(StrEnum):
 TITLES: dict[ReasonCode, str] = {
     ReasonCode.MASK: "column masked",
     ReasonCode.MASK_ORDER_NOTE: "ordering on a masked column is not meaningful",
-    ReasonCode.UNION_STRICTEST: "union column takes the strictest classification",
     ReasonCode.MASK_LINEAGE: "column masked by inherited classification",
     ReasonCode.DENY_COLUMN: "column denied",
     ReasonCode.DENY_AGGREGATE: "aggregate over a denied column",

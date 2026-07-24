@@ -158,3 +158,14 @@ def test_partial_email_domain_survives_without_split_part(raw, expect_contains) 
     got = con.execute(f"SELECT {sql} FROM (SELECT '{raw}' AS c)").fetchone()[0]
     assert expect_contains in got
     assert raw not in got  # the local part is gone
+
+
+@pytest.mark.parametrize("raw", ["SECRET-TOKEN-12345", "no-at-here", "1234567890"])
+def test_partial_email_fully_redacts_non_email_values(raw) -> None:
+    # A column mis-tagged as an email but holding free text (no '@') must not leak the whole value
+    # after the '***@' marker. With no domain to reveal, the value is redacted to '***'.
+    con = duckdb.connect()
+    sql = mask_expression("partial_email", exp.column("c"), salt="s").sql(dialect="duckdb")
+    got = con.execute(f"SELECT {sql} FROM (SELECT '{raw}' AS c)").fetchone()[0]
+    assert got == "***"
+    assert raw not in got

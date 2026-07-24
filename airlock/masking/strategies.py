@@ -37,11 +37,14 @@ _TEMPLATES: dict[str, str] = {
     "hash": "MD5('{salt}' || CAST({col} AS VARCHAR))",
     # Domain via STRPOS + SUBSTRING, not SPLIT_PART: SPLIT_PART has no BigQuery equivalent and would
     # pass through untranspiled. STRPOS transpiles to POSITION / CHARINDEX / INSTR / LOCATE per
-    # dialect. A value with no '@' yields STRPOS = 0, so the whole value follows the '@' - still
-    # masked, still carrying the '***@' shape verify_value checks.
+    # dialect. The CASE guard is load-bearing: a value with no '@' has STRPOS = 0, and without the
+    # guard SUBSTRING(x, 1) returns the *whole* value after the '***@' - so a column mis-tagged as an
+    # email but holding free text would leak in full. No '@' means nothing safe to reveal, so redact.
     "partial_email": (
+        "CASE WHEN STRPOS(CAST({col} AS VARCHAR), '@') > 0 THEN "
         "SUBSTRING(CAST({col} AS VARCHAR), 1, 1) || '***@' || "
-        "SUBSTRING(CAST({col} AS VARCHAR), STRPOS(CAST({col} AS VARCHAR), '@') + 1)"
+        "SUBSTRING(CAST({col} AS VARCHAR), STRPOS(CAST({col} AS VARCHAR), '@') + 1) "
+        "ELSE '***' END"
     ),
     # The length guard is load-bearing: RIGHT(x, 4) on a value of four characters or fewer returns
     # the whole value, so without it the strategy stops masking exactly when the data is shortest.
