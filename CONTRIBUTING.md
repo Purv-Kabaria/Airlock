@@ -1,5 +1,10 @@
 # Contributing to Airlock
 
+Start with the [development guide](docs/development.md): the architecture in code terms, the request
+lifecycle, and how to add a warehouse adapter, a masking strategy, or a reason code. For running
+Airlock rather than changing it, see the [operations runbook](docs/operations.md) and the
+[reason-code reference](docs/reason-codes.md).
+
 ## Setup
 ```
 uv sync --extra dev

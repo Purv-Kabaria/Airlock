@@ -637,6 +637,8 @@ Row-level rules from catalog attributes · result-set DLP as a pluggable post-fl
 
 PRs welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) and the decision records in [`docs/adr/`](docs/adr/). Licensed under **Apache 2.0** (see [`LICENSE`](LICENSE)).
 
+Documentation map: [development guide](docs/development.md) (extend the code) · [operations runbook](docs/operations.md) (run it in production) · [reason-code reference](docs/reason-codes.md) · [warehouses](docs/warehouses.md) · [agent harnesses](docs/agent-harnesses.md) · [benchmarks](docs/benchmarks.md).
+
 ---
 
 <p align="center"><i>Built for <a href="https://datahub.devpost.com/">Build with DataHub: The Agent Hackathon</a>. Airlock is not affiliated with the DataHub project.</i></p>

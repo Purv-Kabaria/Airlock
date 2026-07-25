@@ -11,8 +11,10 @@ GraphQL display-name fields being populated.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 
@@ -142,13 +144,17 @@ def compile_snapshot(config: AirlockConfig) -> PolicyGraph:
                 f"DataHub has no datasets for platform '{config.warehouse.kind}'. "
                 "Ingest the warehouse catalog before starting Airlock."
             )
-        datasets: dict[str, DatasetFacts] = {}
-        for urn in urns:
-            facts = _fetch_dataset(client, urn, config.warehouse.kind)
-            if facts is not None:
-                datasets[urn] = facts
-        lineage = _fetch_lineage(client, list(datasets.keys()))
-        column_lineage = _fetch_column_lineage(client, list(datasets.keys()))
+        kind = config.warehouse.kind
+        datasets = {
+            urn: facts
+            for urn, facts in zip(
+                urns, _map_urns(urns, lambda u: _fetch_dataset(client, u, kind)), strict=True
+            )
+            if facts is not None
+        }
+        known = list(datasets.keys())
+        lineage = _fetch_lineage(client, known)
+        column_lineage = _fetch_column_lineage(client, known)
     except SnapshotUnavailableError:
         raise
     except Exception as exc:
@@ -175,6 +181,26 @@ def compile_snapshot(config: AirlockConfig) -> PolicyGraph:
         hash=graph.content_hash,
     )
     return graph
+
+
+# Catalog reads are one network round-trip per dataset, three times over (facts, lineage, column
+# lineage). Serially that is O(3N) round-trips, so cold start grows linearly with catalog size and a
+# few hundred datasets over a network is minutes. Fetch with a bounded pool instead: the DataHub
+# client is HTTP-over-requests, safe for concurrent reads, and GMS is the bottleneck we cap against.
+_FETCH_WORKERS = 8
+
+_T = TypeVar("_T")
+
+
+def _map_urns(urns: list[str], fn: Callable[[str], _T]) -> list[_T]:
+    """Apply `fn` to every urn with bounded parallelism, preserving input order. `fn` owns its own
+    error handling — this helper only schedules; a per-urn failure is that call's to swallow."""
+    if not urns:
+        return []
+    with ThreadPoolExecutor(
+        max_workers=min(_FETCH_WORKERS, len(urns)), thread_name_prefix="airlock-compile"
+    ) as pool:
+        return list(pool.map(fn, urns))
 
 
 def _list_dataset_urns(client: Any, platform_urn: str) -> list[str]:
@@ -231,17 +257,18 @@ def _fetch_lineage(client: Any, urns: list[str]) -> dict[str, tuple[str, ...]]:
     from datahub.ingestion.graph.client import DataHubGraph
 
     direction = DataHubGraph.RelationshipDirection.INCOMING
-    downstream: dict[str, list[str]] = {}
-    for urn in urns:
+
+    def one(urn: str) -> tuple[str, tuple[str, ...]]:
         try:
             related = client.get_related_entities(
                 entity_urn=urn, relationship_types=["DownstreamOf"], direction=direction
             )
-            for entry in related:
-                downstream.setdefault(urn, []).append(entry.urn)
+            return urn, tuple(entry.urn for entry in related)
         except Exception as exc:
             log.warning("lineage.fetch_failed", urn=urn, detail=str(exc))
-    return {k: tuple(v) for k, v in downstream.items()}
+            return urn, ()
+
+    return {urn: edges for urn, edges in _map_urns(urns, one) if edges}
 
 
 def _fetch_column_lineage(client: Any, urns: list[str]) -> dict[str, tuple[str, ...]]:
@@ -251,16 +278,22 @@ def _fetch_column_lineage(client: Any, urns: list[str]) -> dict[str, tuple[str, 
     read failing degrades propagation for that dataset, it does not fail the snapshot."""
     from datahub.metadata.schema_classes import UpstreamLineageClass
 
-    edges: dict[str, list[str]] = {}
-    for urn in urns:
+    def one(urn: str) -> list[tuple[str, tuple[str, ...]]]:
         try:
             aspect = client.get_aspect(entity_urn=urn, aspect_type=UpstreamLineageClass)
         except Exception as exc:
             log.warning("column_lineage.fetch_failed", urn=urn, detail=str(exc))
-            continue
-        for fine in (aspect.fineGrainedLineages if aspect else None) or []:
-            for downstream in fine.downstreams or []:
-                edges.setdefault(downstream, []).extend(fine.upstreams or [])
+            return []
+        return [
+            (downstream, tuple(fine.upstreams or []))
+            for fine in (aspect.fineGrainedLineages if aspect else None) or []
+            for downstream in fine.downstreams or []
+        ]
+
+    edges: dict[str, list[str]] = {}
+    for pairs in _map_urns(urns, one):
+        for downstream, ups in pairs:
+            edges.setdefault(downstream, []).extend(ups)
     return {downstream: tuple(ups) for downstream, ups in edges.items()}
 
 
