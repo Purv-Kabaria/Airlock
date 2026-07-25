@@ -60,7 +60,9 @@ def main() -> int:
         print("[1/4] Booting DataHub quickstart (first run pulls images; a few minutes)...")
         if not _boot_datahub(_port_of(gms)):
             _fail(
-                "DataHub failed to boot. Run `python demo/reset.py` and try again, or `airlock doctor`."
+                "DataHub failed to boot. On a first run this is almost always an image pull that "
+                "could not reach Docker Hub - check your network or corporate proxy, then re-run. "
+                "Otherwise run `python demo/reset.py` and try again, or `airlock doctor`."
             )
             return 1
         if not _wait_healthy(gms, timeout=300):
