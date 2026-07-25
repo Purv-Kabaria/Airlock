@@ -48,7 +48,8 @@ class Plan:
     timeout: float
     error: Verdict | None = None
     denied: bool = False
-    executed_sql: str | None = None
+    executed_sql: str | None = None  # real SQL for the warehouse; carries the masking salt
+    display_sql: str | None = None  # salt-redacted; what the envelope, audit, and write-back use
     modified: bool = False
     masked_outputs: tuple[tuple[str, str], ...] = ()
     # (dataset_urn, column) actually read, for the DataHub usage write-back. Empty on denied plans:
@@ -273,7 +274,7 @@ class Gateway:
             request_id=request_id,
             principal=principal.name,
             original_sql=sql,
-            executed_sql=plan.executed_sql or sql,
+            executed_sql=plan.display_sql or sql,  # salt-redacted; `check` output is screenshotted
             columns=None,
             rows=None,
             verdicts=verdicts,
@@ -321,6 +322,7 @@ class Gateway:
             )
 
         assert plan.executed_sql is not None
+        assert plan.display_sql is not None  # set together in _build_plan; both present on an exec plan
         try:
             result, coalesced = await self._execute(principal.name, plan)
             _verify_masking(plan, result)
@@ -339,7 +341,9 @@ class Gateway:
             request_id=request_id,
             principal=principal.name,
             original_sql=sql,
-            executed_sql=plan.executed_sql,
+            # display_sql, never executed_sql: the salt ran on the warehouse but must not ride back
+            # out in the envelope, the audit record, or the DataHub write-back this envelope feeds.
+            executed_sql=plan.display_sql,
             columns=result.columns,
             rows=result.rows,
             verdicts=verdicts,
@@ -404,6 +408,7 @@ class Gateway:
                 row_limit=row_limit,
                 timeout=timeout,
                 executed_sql=rr.executed_sql,
+                display_sql=rr.display_sql,
                 modified=False,
                 column_reads=_column_reads(resolved),
             )
@@ -423,6 +428,7 @@ class Gateway:
             row_limit=row_limit,
             timeout=timeout,
             executed_sql=rr.executed_sql,
+            display_sql=rr.display_sql,
             modified=rr.modified,
             masked_outputs=rr.masked_outputs,
             column_reads=_column_reads(resolved),

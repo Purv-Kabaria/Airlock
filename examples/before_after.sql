@@ -44,4 +44,4 @@ WITH "ranked" AS (SELECT "dim_users"."name" AS "name", CASE WHEN STRPOS(CAST("di
 -- before:
 SELECT user_id, contact, signup_month FROM user_report;
 -- after:
-SELECT "user_report"."user_id" AS "user_id", MD5('demo-not-secret-salt' || CAST("user_report"."contact" AS TEXT)) AS "contact", "user_report"."signup_month" AS "signup_month" FROM "user_report" AS "user_report" LIMIT 10000;
+SELECT "user_report"."user_id" AS "user_id", MD5('<masking-salt>' || CAST("user_report"."contact" AS TEXT)) AS "contact", "user_report"."signup_month" AS "signup_month" FROM "user_report" AS "user_report" LIMIT 10000;

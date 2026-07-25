@@ -21,12 +21,32 @@ from airlock.policy.graph import PolicyGraph, Principal
 
 @dataclass(frozen=True, slots=True)
 class RewriteResult:
-    executed_sql: str
+    executed_sql: str  # what runs on the warehouse: carries the real masking salt as a literal
     row_limit: int
     modified: bool
+    # The same SQL with the masking salt redacted. The salt must reach the warehouse (it computes the
+    # hash there), but everything downstream of execution — the envelope the agent reads, the audit
+    # log, the DataHub usage write-back — must not carry it, or the "secret salt" the hash strategy
+    # relies on is handed straight to the party it defends against. Only executed_sql goes to the DB.
+    display_sql: str
     masked_outputs: tuple[
         tuple[str, str], ...
     ] = ()  # (output column alias, strategy) for post-flight
+
+
+# Placeholder that replaces the salt literal in display_sql. Fixed and obviously-not-a-secret so a
+# reader can see a mask ran without learning the value that keys it.
+_SALT_PLACEHOLDER = "'<masking-salt>'"
+
+
+def _redact_salt(sql: str, salt: str) -> str:
+    """Replace the rendered salt literal with a placeholder. The salt lands in the SQL as a single
+    quoted literal with internal quotes doubled (see masking.mask_expression); rebuild that exact
+    form and swap it out. A no-op when the query used no salted mask."""
+    if not salt:
+        return sql
+    literal = "'" + salt.replace("'", "''") + "'"
+    return sql.replace(literal, _SALT_PLACEHOLDER)
 
 
 def existing_limit(expr: exp.Expression) -> int | None:
@@ -99,10 +119,12 @@ def rewrite(
     if current is None or current > limit:
         query = query.limit(limit, copy=False)
 
+    executed_sql = query.sql(dialect=dialect)
     return RewriteResult(
-        executed_sql=query.sql(dialect=dialect),
+        executed_sql=executed_sql,
         row_limit=limit,
         modified=modified,
+        display_sql=_redact_salt(executed_sql, salt),
         masked_outputs=tuple(masked_outputs),
     )
 
