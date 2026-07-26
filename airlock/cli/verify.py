@@ -99,7 +99,9 @@ def check_value(probe: Probe, value: object) -> tuple[bool, str]:
     return False, f"expected {probe.expected!r}, got {actual!r}"
 
 
-async def run_probes(adapter: object, *, dialect: str, salt: str, timeout: float) -> list[ProbeResult]:
+async def run_probes(
+    adapter: object, *, dialect: str, salt: str, timeout: float
+) -> list[ProbeResult]:
     """Execute every probe, collecting results rather than stopping at the first failure.
 
     A partial failure is the interesting case - it says *which* strategy a warehouse mishandles, so
@@ -113,9 +115,7 @@ async def run_probes(adapter: object, *, dialect: str, salt: str, timeout: float
         try:
             result = await adapter.run(sql, timeout=timeout, row_limit=1)  # type: ignore[attr-defined]
         except AirlockError as exc:
-            results.append(
-                ProbeResult(probe.strategy, sql, None, False, str(exc).splitlines()[0])
-            )
+            results.append(ProbeResult(probe.strategy, sql, None, False, str(exc).splitlines()[0]))
             continue
         value = result.rows[0].get(_ALIAS) if result.rows else None
         ok, detail = check_value(probe, value)

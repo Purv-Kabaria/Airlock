@@ -79,13 +79,14 @@ def render_envelope(envelope: Envelope) -> None:
 # also reads (taste rule 1: two readers, one set of facts), so the scan line can never drift from
 # the table below it. The row-limit and note verdicts are left out on purpose: they are always-on
 # noise, not a change the reader has to reason about.
-_CHANGE = (("substitute", "table", "redirected"), ("mask", "column", "masked"),
-           ("deny_column", "column", "removed"))
+_CHANGE = (
+    ("substitute", "table", "redirected"),
+    ("mask", "column", "masked"),
+    ("deny_column", "column", "removed"),
+)
 
 
-def _summarize(
-    verdicts: list[tuple[str, str, str]], status: EnvelopeStatus
-) -> str | None:
+def _summarize(verdicts: list[tuple[str, str, str]], status: EnvelopeStatus) -> str | None:
     """One plain-language line of what happened, or None when the status line already says it.
 
     Takes (code, action, subject) rather than just the action because monitor mode emits the very

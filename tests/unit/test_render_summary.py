@@ -34,14 +34,20 @@ def test_denied_names_the_blocker() -> None:
 
 
 def test_denied_counts_extra_blockers() -> None:
-    pairs = [("AIRLOCK-301", "scope_deny", "table:payroll"), ("AIRLOCK-120", "deny_statement", "column:x.y")]
+    pairs = [
+        ("AIRLOCK-301", "scope_deny", "table:payroll"),
+        ("AIRLOCK-120", "deny_statement", "column:x.y"),
+    ]
     got = _summarize(pairs, EnvelopeStatus.DENIED)
     assert got is not None and "+1 more" in got
 
 
 def test_error_has_no_summary() -> None:
     # The single error verdict's reason is the whole message; a summary would just repeat it.
-    assert _summarize([("AIRLOCK-401", "deny_statement", "statement:query")], EnvelopeStatus.ERROR) is None
+    assert (
+        _summarize([("AIRLOCK-401", "deny_statement", "statement:query")], EnvelopeStatus.ERROR)
+        is None
+    )
 
 
 def test_monitor_mode_never_claims_a_column_was_changed() -> None:

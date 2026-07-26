@@ -131,8 +131,7 @@ def ping(config: AirlockConfig, *, timeout: float = 5.0) -> None:
     resp.raise_for_status()
     if not _is_gms_config(resp.text):
         raise NotDataHubError(
-            f"{datahub.url} answered but is not a DataHub GMS "
-            "(another service may hold this port)"
+            f"{datahub.url} answered but is not a DataHub GMS (another service may hold this port)"
         )
 
 
@@ -262,7 +261,9 @@ def _domain_filter(client: Any, domains: list[str]) -> list[str]:
     return resolved
 
 
-def _list_dataset_urns(client: Any, platform_urn: str, domains: list[str] | None = None) -> list[str]:
+def _list_dataset_urns(
+    client: Any, platform_urn: str, domains: list[str] | None = None
+) -> list[str]:
     filters: list[dict[str, Any]] = [{"field": "platform", "values": [platform_urn]}]
     if domains:
         filters.append({"field": "domains", "values": _domain_filter(client, domains)})

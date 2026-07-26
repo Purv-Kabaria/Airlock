@@ -176,7 +176,11 @@ def init(
     datahub_url = (
         ""
         if local
-        else ("http://localhost:8080" if yes else typer.prompt("DataHub GMS URL", default="http://localhost:8080"))
+        else (
+            "http://localhost:8080"
+            if yes
+            else typer.prompt("DataHub GMS URL", default="http://localhost:8080")
+        )
     )
     dsn = default_dsn if yes else typer.prompt(f"Warehouse DSN - {shape}", default=default_dsn)
     driver = dialect = None

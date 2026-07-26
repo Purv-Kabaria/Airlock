@@ -322,7 +322,9 @@ class Gateway:
             )
 
         assert plan.executed_sql is not None
-        assert plan.display_sql is not None  # set together in _build_plan; both present on an exec plan
+        assert (
+            plan.display_sql is not None
+        )  # set together in _build_plan; both present on an exec plan
         try:
             result, coalesced = await self._execute(principal.name, plan)
             _verify_masking(plan, result)

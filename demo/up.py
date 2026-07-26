@@ -354,7 +354,9 @@ def _print_next_steps(gms: str) -> None:
         "--as growth-agent -c demo/airlock.yaml"
     )
     print(f"    {airlock} tail -c demo/airlock.yaml        (live decision stream, second pane)")
-    print("\n  Drive it from an agent (Claude Desktop, Cursor, ...) - paste into your MCP client:\n")
+    print(
+        "\n  Drive it from an agent (Claude Desktop, Cursor, ...) - paste into your MCP client:\n"
+    )
     print(json.dumps(config, indent=2))
     print("\n  Full 3-minute demo path: demo/SCRIPT.md")
     print("=" * 70)

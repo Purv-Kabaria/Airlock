@@ -60,7 +60,9 @@ class CatalogFile(_Strict):
     datasets: list[DatasetEntry] = Field(default_factory=list)
 
 
-def load_catalog_file(path: Path, platform: str) -> tuple[dict[str, DatasetFacts], dict[str, tuple[str, ...]]]:
+def load_catalog_file(
+    path: Path, platform: str
+) -> tuple[dict[str, DatasetFacts], dict[str, tuple[str, ...]]]:
     """Read the catalog file into the same facts DataHub compilation produces.
 
     Returns (datasets, lineage). Raises ConfigError with the offending field named, never a

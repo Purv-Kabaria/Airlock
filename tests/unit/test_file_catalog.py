@@ -46,7 +46,11 @@ def _config(tmp_path: Path, catalog: str = CATALOG) -> AirlockConfig:
             "rules": [
                 {"id": "pii", "match": {"tag": "PII"}, "action": {"mask": "auto"}},
                 {"id": "ssn", "match": {"glossary_term": "Classification.SSN"}, "action": "deny"},
-                {"id": "dep", "match": {"lifecycle": "DEPRECATED"}, "action": "substitute_certified"},
+                {
+                    "id": "dep",
+                    "match": {"lifecycle": "DEPRECATED"},
+                    "action": "substitute_certified",
+                },
             ],
             "principals": [{"name": "agent", "key": "k"}],
             "masking": {"salt": "s"},
@@ -75,8 +79,12 @@ def test_replaced_by_drives_substitution(tmp_path) -> None:
 
 def test_verdicts_carry_no_broken_catalog_link(tmp_path) -> None:
     graph = compile_snapshot(_config(tmp_path))
-    resolved = resolve("SELECT email FROM users", dialect="sqlite", graph=graph, enforcement=graph.enforcement)
-    masked = [v for v in decide(resolved, graph.principal("agent"), graph) if v.code == "AIRLOCK-110"]
+    resolved = resolve(
+        "SELECT email FROM users", dialect="sqlite", graph=graph, enforcement=graph.enforcement
+    )
+    masked = [
+        v for v in decide(resolved, graph.principal("agent"), graph) if v.code == "AIRLOCK-110"
+    ]
     # A file path is not a URL; inventing `./catalog.yaml/dataset/urn:...` would be a broken link
     # presented to the agent as a citation.
     assert masked and masked[0].catalog_url is None

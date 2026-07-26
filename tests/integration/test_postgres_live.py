@@ -45,7 +45,9 @@ DIM = dataset_urn("postgres", "dim_users")
 SALT = "postgres-conformance-salt"
 
 
-def _col(name: str, dtype: str, tags: tuple[str, ...] = (), terms: tuple[str, ...] = ()) -> ColumnFact:
+def _col(
+    name: str, dtype: str, tags: tuple[str, ...] = (), terms: tuple[str, ...] = ()
+) -> ColumnFact:
     return ColumnFact(
         name=name,
         urn=field_urn(DIM, name),
@@ -76,7 +78,9 @@ def _graph() -> PolicyGraph:
         column_lineage={},
         rules=(
             Rule.make("pii", Match(tag="PII"), ActionSpec(ActionKind.MASK, "auto")),
-            Rule.make("ssn", Match(glossary_term="Classification.SSN"), ActionSpec(ActionKind.DENY)),
+            Rule.make(
+                "ssn", Match(glossary_term="Classification.SSN"), ActionSpec(ActionKind.DENY)
+            ),
         ),
         enforcement=EnforcementSettings(),
         principals={"agent": Principal("agent", Scope(domains=frozenset({"Marketing"})))},

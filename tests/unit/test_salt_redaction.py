@@ -55,7 +55,9 @@ def _salted_config(dsn: str, jsonl: str) -> AirlockConfig:
             "warehouse": {"kind": "duckdb", "dsn": dsn},
             "enforcement": {"mode": "enforce"},
             "rules": [{"id": "pii", "match": {"tag": "PII"}, "action": {"mask": "auto"}}],
-            "principals": [{"name": "finance-agent", "key": "f", "scopes": {"domains": ["Finance"]}}],
+            "principals": [
+                {"name": "finance-agent", "key": "f", "scopes": {"domains": ["Finance"]}}
+            ],
             "masking": {"salt": _SALT},
             "audit": {"jsonl": jsonl, "datahub_writeback": False},
         }
@@ -72,7 +74,9 @@ def test_gateway_envelope_and_audit_never_carry_the_salt(tmp_path, warehouse) ->
     store.install(build_graph())
     gateway = Gateway(cfg, store, DuckdbAdapter(warehouse), [])
     try:
-        env = gateway.dry_run("SELECT salary FROM payroll", "finance-agent")  # salary is PII -> hash
+        env = gateway.dry_run(
+            "SELECT salary FROM payroll", "finance-agent"
+        )  # salary is PII -> hash
         assert env.executed_sql is not None
         assert _SALT not in env.executed_sql  # the agent must not receive the secret
         assert _SALT_PLACEHOLDER in env.executed_sql

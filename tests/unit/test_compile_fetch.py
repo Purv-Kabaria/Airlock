@@ -75,8 +75,6 @@ def test_fetch_column_lineage_merges_fine_grained_edges() -> None:
 
 
 def test_fetch_column_lineage_swallows_a_single_urn_failure() -> None:
-    client = _ColumnLineageClient(
-        {"good": _aspect([(["col:d.x"], ["col:s.y"])])}, boom="bad"
-    )
+    client = _ColumnLineageClient({"good": _aspect([(["col:d.x"], ["col:s.y"])])}, boom="bad")
     result = _fetch_column_lineage(client, ["bad", "good"])
     assert result == {"col:d.x": ("col:s.y",)}
