@@ -130,6 +130,24 @@ Airlock sits between two things it doesn't want to be picky about: the agent and
 | Any other MCP client or framework | Same three tools, same typed responses |
 | Your own script | Anthropic or any OpenAI-compatible model — see [`demo/agent_reformulation.py`](demo/agent_reformulation.py) |
 
+Don't take the table's word for it — **`airlock verify` checks your own database.** It renders every masking strategy into your warehouse's dialect, runs it, and shows you what came back. Read-only and schema-free: each probe masks a literal inside a subquery, so it reads no table, creates nothing, and needs nothing beyond permission to run a `SELECT`. Point it at production safely, or wire `--json` into CI.
+
+```
+$ airlock verify -c airlock.yaml
+masking check  postgres · rendering as the postgres dialect
+    strategy         result
+ok  hash             e87c07d3cfe6481f3d1b01e5618673fa
+ok  partial_email    a***@corp.com
+ok  partial_phone    ***-7890
+ok  fixed_string     ***
+ok  generalize_date  2026-07-01T00:00:00+00:00
+every masking strategy renders and executes on postgres.
+```
+
+That `hash` digest is byte-identical to the one DuckDB returns for the same input and salt — the same value becomes the same pseudonym whichever warehouse answers, which is what makes a masked key joinable across them.
+
+This is how we found that `hash` — the default for most PII — was silently broken on SQLite, and fixed it. A warehouse table is a claim; this is a check.
+
 Details: [`docs/warehouses.md`](docs/warehouses.md) · [`docs/agent-harnesses.md`](docs/agent-harnesses.md)
 
 ## Who it's for
@@ -181,6 +199,7 @@ git clone https://github.com/Purv-Kabaria/Airlock && cd Airlock
 uv pip install -e .     # not on PyPI yet; install from the repo
 airlock init            # asks which warehouse, then writes the config for it
 airlock doctor          # every check, with the fix for anything broken
+airlock verify          # proves masking actually runs on your database (read-only)
 airlock check "SELECT * FROM users" --as analytics-agent   # dry-run before going live
 airlock serve
 ```
