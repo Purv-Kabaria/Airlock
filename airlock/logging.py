@@ -52,6 +52,7 @@ def configure(*, json_logs: bool = False, level: str = "INFO") -> None:
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
-    if not _configured:
-        configure()
+    # Deliberately does not configure: a library that self-configures at import locks the log level
+    # before the entry point can choose it, which is how interactive CLI commands ended up printing
+    # server-level INFO to stderr. Entry points (the CLI callback, run_server) call configure().
     return structlog.get_logger(name)  # type: ignore[no-any-return]

@@ -63,11 +63,21 @@ def _show_version(value: bool) -> None:
 
 @app.callback()
 def _root(
+    ctx: typer.Context,
     version: bool = typer.Option(
         False, "--version", help="Show version and exit.", is_eager=True, callback=_show_version
     ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show info-level logs on stderr (quiet by default)."
+    ),
 ) -> None:
     """Airlock - policy compiled from DataHub, enforced in-flight, explained to the agent."""
+    from airlock.logging import configure
+
+    # Quiet by default so an interactive command prints only its result. `serve` is a long-running
+    # server, so it logs at info even without -v; everything else stays silent unless asked.
+    server = ctx.invoked_subcommand == "serve"
+    configure(level="INFO" if verbose or server else "WARNING")
 
 
 @app.command(name="mcp-config", rich_help_panel=_SETUP)

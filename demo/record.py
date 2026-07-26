@@ -349,6 +349,11 @@ def main() -> int:
     VERIFY = args.rehearse
 
     _load_env()
+    # The recorder's in-process gateway (the write-back beat) would otherwise print structured logs
+    # onto the terminal being recorded. Keep the screen to captions and envelopes only.
+    from airlock.logging import configure
+
+    configure(level="WARNING")
     pace = Pacer(args.rehearse)
 
     console.print("[dim]preflight ...[/]")

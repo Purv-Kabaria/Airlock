@@ -6,6 +6,7 @@ This is the human view: color by outcome, a verdict table, the executed SQL, and
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from rich.console import Console
@@ -44,6 +45,11 @@ def render_envelope(envelope: Envelope) -> None:
         f"[bold {style}]{envelope.status.value.upper()}[/] "
         f"[dim]{envelope.request_id} · {envelope.principal} · {snapshot}[/]"
     )
+    summary = _summarize(
+        [(v.action, v.subject) for v in envelope.verdicts], envelope.status
+    )
+    if summary:
+        console.print(summary)
 
     if envelope.verdicts:
         table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
@@ -67,6 +73,33 @@ def render_envelope(envelope: Envelope) -> None:
 
     if envelope.rows is not None:
         _render_rows(envelope.columns or [], envelope.rows, envelope.truncated)
+
+
+# What happened, in the words a stranger reads first. Derived only from the verdicts the machine
+# also reads (taste rule 1: two readers, one set of facts), so the scan line can never drift from
+# the table below it. The row-limit and note verdicts are left out on purpose: they are always-on
+# noise, not a change the reader has to reason about.
+_CHANGE = (("substitute", "table", "redirected"), ("mask", "column", "masked"),
+           ("deny_column", "column", "removed"))
+
+
+def _summarize(pairs: list[tuple[str, str]], status: EnvelopeStatus) -> str | None:
+    """One plain-language line of what happened, or None when the status line already says it."""
+    if status is EnvelopeStatus.ERROR:
+        return None  # the single error verdict's reason is the whole message
+    if status is EnvelopeStatus.DENIED:
+        blockers = [subj for act, subj in pairs if act in ("deny_statement", "scope_deny")]
+        if not blockers:
+            return None
+        more = f" (+{len(blockers) - 1} more)" if len(blockers) > 1 else ""
+        return f"[bold]Blocked on {blockers[0]}{more}.[/]"
+    counts = Counter(act for act, _ in pairs)
+    parts = [
+        f"{counts[act]} {noun}{'' if counts[act] == 1 else 's'} {verb}"
+        for act, noun, verb in _CHANGE
+        if counts[act]
+    ]
+    return " · ".join(parts) + "." if parts else "[dim]Nothing hidden or removed.[/]"
 
 
 def _render_rows(columns: list[str], rows: list[dict[str, Any]], truncated: bool) -> None:
@@ -236,6 +269,12 @@ def render_replay(record: dict[str, Any]) -> None:
     )
 
     verdicts = record.get("verdicts") or []
+    if known is not None:
+        summary = _summarize(
+            [(str(v.get("action", "")), str(v.get("subject", ""))) for v in verdicts], known
+        )
+        if summary:
+            console.print(summary)
     if verdicts:
         table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
         table.add_column("code", style="bold")

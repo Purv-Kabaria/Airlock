@@ -241,6 +241,9 @@ async def run_server(
     health_port: int = 8081,
 ) -> None:
     """Boot the gateway (fail-fast on no snapshot), start refresh + health, and serve MCP."""
+    from airlock.logging import configure
+
+    configure(level="INFO")  # a server logs; no-op if the CLI callback already configured
     gateway = Gateway.build(config)
     await gateway.bootstrap()
     refresh_task = asyncio.create_task(gateway.refresh_loop())
