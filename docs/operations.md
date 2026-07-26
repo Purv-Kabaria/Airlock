@@ -68,6 +68,7 @@ default.
 |---|---|---|---|
 | `datahub.url` | str | — (required) | GMS base URL. |
 | `datahub.token` | str \| null | `null` | Bearer token for GMS. Use an env ref. |
+| `datahub.domains` | list | `[]` | Compile only these DataHub domains (names or urns). Empty compiles every dataset on the platform. Applied server-side in the search query, so filtered datasets are never fetched. A name that matches no domain refuses to compile rather than silently producing an empty deny-everything policy. |
 | `datahub.snapshot.refresh_interval` | duration | `300s` | Background recompile cadence. |
 | `datahub.snapshot.max_staleness` | duration | `86400s` (24h) | Age past which `stale_policy` applies. |
 | `datahub.snapshot.stale_policy` | `fail_closed` \| `serve_stale_readonly` | `fail_closed` | What a stale snapshot does. **`serve_stale_readonly` relaxes safety** (see §6). |

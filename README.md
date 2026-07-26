@@ -471,6 +471,9 @@ One file, checked into Git. Secrets are only ever `${ENV}` references, never val
 datahub:
   url: ${DATAHUB_GMS_URL}
   token: ${DATAHUB_GMS_TOKEN}
+  domains: []                   # optional: compile only these domains (names or urns).
+                                # Empty = every dataset on the platform. On a large catalog this
+                                # is the difference between one team's tables and the company's.
   snapshot:
     refresh_interval: 5m
     max_staleness: 24h          # past this, stale_policy applies

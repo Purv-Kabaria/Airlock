@@ -72,6 +72,10 @@ class SnapshotConfig(_Strict):
 class DatahubConfig(_Strict):
     url: str
     token: str | None = None
+    # Compile only these DataHub domains instead of every dataset on the platform. Names or urns.
+    # Empty means the whole platform. At real catalog sizes this is the difference between a
+    # snapshot of the tables one team owns and a snapshot of the company.
+    domains: list[str] = Field(default_factory=list)
     snapshot: SnapshotConfig = SnapshotConfig()
 
 

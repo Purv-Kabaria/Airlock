@@ -32,12 +32,23 @@ log = get_logger("airlock.policy.compile")
 _CLIENT_TIMEOUT_SEC = 15.0
 _CLIENT_RETRIES = 1
 
+# The filter array is a variable so one query serves both the whole-platform case and a
+# domain-scoped one. Filtering server-side matters at real catalog sizes: an org with thousands of
+# datasets running Airlock for one team should not pay to compile - or hold in memory - the rest.
 _LIST_QUERY = """
-query listDatasets($platform: String!, $start: Int!, $count: Int!) {
+query listDatasets($and: [FacetFilterInput!]!, $start: Int!, $count: Int!) {
   search(input: {type: DATASET, query: "*", start: $start, count: $count,
-    orFilters: [{and: [{field: "platform", values: [$platform]}]}]}) {
+    orFilters: [{and: $and}]}) {
     start count total
     searchResults { entity { urn } }
+  }
+}
+"""
+
+_DOMAIN_QUERY = """
+query findDomain($name: String!) {
+  search(input: {type: DOMAIN, query: $name, start: 0, count: 25}) {
+    searchResults { entity { urn ... on Domain { properties { name } } } }
   }
 }
 """
@@ -155,11 +166,13 @@ def _compile_from_datahub(config: AirlockConfig) -> PolicyGraph:
             )
         )
         platform_urn = f"urn:li:dataPlatform:{config.warehouse.kind}"
-        urns = _list_dataset_urns(client, platform_urn)
+        urns = _list_dataset_urns(client, platform_urn, datahub.domains)
         if not urns:
+            scope = f" in domains {datahub.domains}" if datahub.domains else ""
             raise SnapshotUnavailableError(
-                f"DataHub has no datasets for platform '{config.warehouse.kind}'. "
-                "Ingest the warehouse catalog before starting Airlock."
+                f"DataHub has no datasets for platform '{config.warehouse.kind}'{scope}. "
+                "Ingest the warehouse catalog before starting Airlock"
+                + (", or widen datahub.domains." if datahub.domains else ".")
             )
         kind = config.warehouse.kind
         datasets = {
@@ -220,12 +233,44 @@ def _map_urns(urns: list[str], fn: Callable[[str], _T]) -> list[_T]:
         return list(pool.map(fn, urns))
 
 
-def _list_dataset_urns(client: Any, platform_urn: str) -> list[str]:
+def _domain_filter(client: Any, domains: list[str]) -> list[str]:
+    """Resolve configured domain names to their URNs.
+
+    A URN is passed through untouched, because DataHub often assigns domains a GUID rather than a
+    readable id and an operator who already knows it should not have to look up a name. A name that
+    matches nothing raises rather than silently narrowing the catalog to nothing: an empty filter
+    would compile an empty policy, which denies every query - fail-closed, but for a reason nobody
+    could diagnose from the outside.
+    """
+    resolved: list[str] = []
+    for name in domains:
+        if name.startswith("urn:li:domain:"):
+            resolved.append(name)
+            continue
+        result = client.execute_graphql(_DOMAIN_QUERY, variables={"name": name})
+        matches = [
+            r["entity"]["urn"]
+            for r in result["search"]["searchResults"]
+            if ((r["entity"].get("properties") or {}).get("name") or "").lower() == name.lower()
+        ]
+        if not matches:
+            raise SnapshotUnavailableError(
+                f"datahub.domains lists {name!r}, which is not a domain in this DataHub. "
+                "Check the spelling in the DataHub UI, or use the domain's urn."
+            )
+        resolved += matches
+    return resolved
+
+
+def _list_dataset_urns(client: Any, platform_urn: str, domains: list[str] | None = None) -> list[str]:
+    filters: list[dict[str, Any]] = [{"field": "platform", "values": [platform_urn]}]
+    if domains:
+        filters.append({"field": "domains", "values": _domain_filter(client, domains)})
     urns: list[str] = []
     start, count = 0, 200
     while True:
         result = client.execute_graphql(
-            _LIST_QUERY, variables={"platform": platform_urn, "start": start, "count": count}
+            _LIST_QUERY, variables={"and": filters, "start": start, "count": count}
         )
         search = result["search"]
         page = [r["entity"]["urn"] for r in search["searchResults"]]
