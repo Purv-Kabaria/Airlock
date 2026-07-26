@@ -61,9 +61,13 @@ def parse_snowflake_dsn(dsn: str) -> dict[str, Any]:
     # Every query-string key is a connect() kwarg (warehouse, role, authenticator, ...). Last wins.
     for key, values in parse_qs(parsed.query).items():
         args[key] = values[-1]
-    # Read-only by construction: Airlock never issues DML, but pin the session so a misconfigured
-    # warehouse role cannot be used for writes even in principle.
-    args.setdefault("session_parameters", {})
+    # Tag the session so Airlock's traffic is identifiable in Snowflake's QUERY_HISTORY, which is
+    # what lets an auditor reconcile the gateway's own ledger against the warehouse's view of it.
+    # A DSN-supplied value wins; a non-dict one (someone wrote ?session_parameters=x) is replaced
+    # rather than crashed on.
+    session = args.get("session_parameters")
+    args["session_parameters"] = session = session if isinstance(session, dict) else {}
+    session.setdefault("QUERY_TAG", "airlock")
     return args
 
 
@@ -92,8 +96,13 @@ class SnowflakeAdapter:
     async def _run_on(self, conn: Any, sql: str, *, timeout: float, row_limit: int) -> QueryResult:
         import snowflake.connector
 
+        # The cancel path needs the cursor's query id while execute() is still blocking a worker
+        # thread, so the cursor is published here rather than only returned at the end.
+        inflight: dict[str, Any] = {}
+
         def _work() -> tuple[list[str], list[tuple[Any, ...]], str | None]:
             cur = conn.cursor()
+            inflight["cursor"] = cur
             try:
                 cur.execute(sql, timeout=int(timeout))
                 columns = [d.name for d in cur.description or []]
@@ -106,9 +115,9 @@ class SnowflakeAdapter:
         try:
             columns, rows, _ = await task
         except asyncio.CancelledError:
-            # The client dropped. Best-effort: cancel the running query server-side by id so it
-            # stops burning credits, then let the drain finish before the connection is discarded.
-            await self._cancel_inflight(conn)
+            # The client dropped. Cancel the query server-side so it stops burning credits, then let
+            # the drain finish before the connection is discarded.
+            await self._cancel_inflight(inflight.get("cursor"))
             await _drain(task)
             raise
         except snowflake.connector.errors.Error as exc:
@@ -125,9 +134,39 @@ class SnowflakeAdapter:
         ]
         return QueryResult(columns=columns, rows=shaped, truncated=truncated)
 
-    async def _cancel_inflight(self, conn: Any) -> None:
-        with contextlib.suppress(Exception):
-            await asyncio.to_thread(conn.cancel)
+    async def _cancel_inflight(self, cursor: Any) -> None:
+        """Stop a still-running query after its client went away.
+
+        Neither the connection nor the cursor exposes a public `cancel()` - the connector keeps
+        cancellation private (`SnowflakeConnection._cancel_query`), and calling a private method
+        would break on a driver upgrade. So this uses the documented SQL entry point,
+        `SYSTEM$CANCEL_QUERY`, against the query id the cursor publishes as `sfqid`.
+
+        It runs on a connection of its own because the query's connection is still blocked inside
+        execute() on a worker thread. Failure is logged, never raised: this runs while a
+        CancelledError is already propagating, and masking that would lose the real outcome.
+        """
+        import snowflake.connector
+
+        query_id = getattr(cursor, "sfqid", None)
+        if not query_id:
+            return  # execute() had not reached the server yet; nothing is running to cancel
+
+        def _cancel() -> None:
+            conn = self._connect()
+            try:
+                cur = conn.cursor()
+                try:
+                    cur.execute("SELECT SYSTEM$CANCEL_QUERY(%s)", (query_id,))
+                finally:
+                    cur.close()
+            finally:
+                conn.close()
+
+        try:
+            await asyncio.to_thread(_cancel)
+        except (snowflake.connector.errors.Error, OSError) as exc:
+            log.warning("snowflake.cancel_failed", query_id=query_id, detail=str(exc))
 
     async def list_tables(self) -> list[str]:
         _, rows = await self._query(

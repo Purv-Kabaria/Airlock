@@ -164,7 +164,11 @@ class BigQueryAdapter:
         if credentials_path:
             from google.oauth2 import service_account
 
-            credentials = service_account.Credentials.from_service_account_file(credentials_path)
+            # google-auth ships no annotations for this constructor; the ignore is needed only when
+            # the bigquery extra is installed, which is why it is scoped to this one call.
+            credentials = service_account.Credentials.from_service_account_file(  # type: ignore[no-untyped-call]
+                credentials_path
+            )
         return bigquery.Client(
             project=self._project, credentials=credentials, location=self._location
         )

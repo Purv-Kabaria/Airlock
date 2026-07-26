@@ -120,7 +120,7 @@ Airlock sits between two things it doesn't want to be picky about: the agent and
 | Databases | How |
 |---|---|
 | DuckDB, Postgres | Dedicated adapters, each exercised end to end against a live server — Postgres by `pytest tests/integration` against a throwaway container |
-| Snowflake, BigQuery | Dedicated adapters. Written against the vendor docs and unit-tested, but we have no account to run them against, so treat them as untried on real data |
+| Snowflake, BigQuery | Dedicated adapters, checked call-by-call against the installed driver (that audit found and fixed a broken Snowflake cancel). Still never run against a real account — treat them as untried on live data |
 | SQLite | Ships with Python — no driver to install, runs on a Raspberry Pi |
 | MySQL, Trino, ClickHouse, Redshift, Oracle, ODBC, … | `kind: dbapi` — name any [PEP 249](https://peps.python.org/pep-0249/) driver and its SQL dialect |
 

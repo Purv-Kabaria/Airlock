@@ -13,7 +13,7 @@ How far each one has actually been exercised, so you know what you are trusting:
 | DuckDB | The demo warehouse. Every demo, eval, and gauntlet run goes through it. |
 | SQLite | Unit-tested live against the stdlib driver, including all five DB-API paramstyles. |
 | Postgres | Verified end to end against a real server — see the conformance suite below. |
-| Snowflake, BigQuery | Built from the vendor docs and unit-tested (DSN parsing, request shaping), but never run against a real account. Expect to shake out a bug or two; please file what you find. |
+| Snowflake, BigQuery | Unit-tested (DSN parsing, request shaping) and audited call-by-call against the installed driver — every method, keyword, and parameter style the adapters use is checked to exist with the signature they assume. Never run against a real account, so expect to shake out a bug or two; please file what you find. |
 | `dbapi` | The generic path SQLite is tested through. Any given driver is as good as its PEP 249 compliance. |
 
 The `warehouse` block takes a `kind`, a `dsn`, and the row-limit and timeout defaults. Secrets stay
