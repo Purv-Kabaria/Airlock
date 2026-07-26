@@ -161,6 +161,7 @@ Never write a bare `"AIRLOCK-NNN"` string anywhere else — reference `ReasonCod
 | Lint + types + edges | `make ci` | no |
 | Property (rewriter) | part of unit; `tests/unit/test_analyzer_property.py` | no (embeds DuckDB) |
 | Edge contract | `make edges` (`tools/check_edges.py`) | no |
+| Postgres conformance | `pytest tests/integration` with `AIRLOCK_TEST_POSTGRES_DSN` set | a Postgres container, not the demo stack |
 | Bench (p95 < 10ms gate) | `make bench` | yes — `make up` first |
 | Eval (10 questions) | `make eval` | yes |
 | Judge (hostile gauntlet) | `make judge` | yes |
