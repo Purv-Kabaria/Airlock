@@ -52,7 +52,7 @@ Security is right. And the options on the table are all bad:
 |---|---|
 | **Broad service account** | The agent reads anything the account can. One prompt injection from exfiltrating `users.ssn`. Auditors will (correctly) fail this. |
 | **Warehouse RBAC / masking views** | Static, role-based, per-warehouse. Nobody maintains per-agent grants across hundreds of tables; policy drifts from reality within a month. Every reclassification means new `GRANT`s and rebuilt views. |
-| **Enterprise access platforms** (Satori, Immuta, Cyral) | The enforcement model works, but: six-figure contracts, built for human BI users, and not agent-aware. A blocked query is a dead end, not a correction signal. |
+| **Enterprise access platforms** (Satori, Immuta, Cyral) | The enforcement model genuinely works. But they are sold through enterprise procurement (none publish list pricing), they were built for human BI users, and none of them are agent-aware: a blocked query is a dead end, not a correction signal. |
 | **Generic MCP gateways** (the 2026 crop) | Auth, tool allowlists, rate limits, and regex PII scanning of *strings*. None of them parse SQL, none know which columns are sensitive *in your org*, and none know `users_raw` was deprecated last Tuesday. Regex on a result set is not a security boundary. |
 
 So pilots stall in security review, or they ship with an over-permissioned credential that becomes the next breach report. The blast radius of one such credential is your entire warehouse; one leaked answer with unmasked PII is a reportable GDPR/CCPA incident. Teams don't need a smarter agent. They need a place to stand between the agent and the data.
