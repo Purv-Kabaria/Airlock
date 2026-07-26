@@ -86,9 +86,52 @@ def main() -> int:
         )
         return 1
 
-    print("[4/4] Ready.")
+    print("[4/4] Waiting for DataHub to index the catalog...")
+    if not _wait_catalog_queryable(timeout=180):
+        _fail(
+            "DataHub accepted the catalog but has not made it searchable within the timeout. "
+            "Give it another minute and run `airlock doctor -c demo/airlock.yaml`; if it stays "
+            "empty, run `python demo/reset.py` and then `python demo/up.py` again."
+        )
+        return 1
+
+    print("      Ready.")
     _print_next_steps(gms)
     return 0
+
+
+def _wait_catalog_queryable(*, timeout: int) -> bool:
+    """Block until the seeded catalog can actually be compiled into a policy snapshot.
+
+    Emitting metadata and being able to *find* it are two different events. The REST emitter returns
+    as soon as GMS accepts the write, but Airlock discovers datasets through the search API, which
+    is Elasticsearch-backed and indexes asynchronously. Between those two moments the catalog is
+    real but invisible, and compiling a snapshot fails with "DataHub has no datasets".
+
+    Nobody notices by hand, because typing the next command takes longer than the indexing does.
+    CI notices every time, and so would a judge who pastes the command this script prints. Waiting
+    on the real thing - a successful compile - is the only check that guarantees the next command
+    works, so this runs the exact code path `airlock check` is about to run.
+    """
+    from airlock.config import autoload_env, load_config
+    from airlock.errors import SnapshotUnavailableError
+    from airlock.policy.compile import compile_snapshot
+
+    config_path = DEMO / "airlock.yaml"
+    autoload_env(config_path)
+    config = load_config(config_path)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            graph = compile_snapshot(config)
+        except SnapshotUnavailableError:
+            time.sleep(3)
+            continue
+        if graph.datasets:
+            print(f"      indexed: {len(graph.datasets)} datasets are queryable")
+            return True
+        time.sleep(3)
+    return False
 
 
 def _force_utf8_io() -> None:

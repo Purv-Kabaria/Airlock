@@ -170,7 +170,8 @@ def _compile_from_datahub(config: AirlockConfig) -> PolicyGraph:
             scope = f" in domains {datahub.domains}" if datahub.domains else ""
             raise SnapshotUnavailableError(
                 f"DataHub has no datasets for platform '{config.warehouse.kind}'{scope}. "
-                "Ingest the warehouse catalog before starting Airlock"
+                "If you just ingested them, DataHub's search index may still be catching up - "
+                "wait a few seconds and retry. Otherwise ingest the warehouse catalog first"
                 + (", or widen datahub.domains." if datahub.domains else ".")
             )
         kind = config.warehouse.kind
