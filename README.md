@@ -119,7 +119,8 @@ Airlock sits between two things it doesn't want to be picky about: the agent and
 
 | Databases | How |
 |---|---|
-| DuckDB, Postgres, Snowflake, BigQuery | Dedicated adapters |
+| DuckDB, Postgres | Dedicated adapters, each exercised end to end against a live server — Postgres by `pytest tests/integration` against a throwaway container |
+| Snowflake, BigQuery | Dedicated adapters. Written against the vendor docs and unit-tested, but we have no account to run them against, so treat them as untried on real data |
 | SQLite | Ships with Python — no driver to install, runs on a Raspberry Pi |
 | MySQL, Trino, ClickHouse, Redshift, Oracle, ODBC, … | `kind: dbapi` — name any [PEP 249](https://peps.python.org/pep-0249/) driver and its SQL dialect |
 
@@ -178,13 +179,13 @@ Ask: *"Top customers by lifetime value, with their emails?"* — then watch the 
 ```bash
 git clone https://github.com/Purv-Kabaria/Airlock && cd Airlock
 uv pip install -e .     # not on PyPI yet; install from the repo
-airlock init            # wizard: DataHub URL + token, warehouse DSN, defaults
+airlock init            # asks which warehouse, then writes the config for it
 airlock doctor          # every check, with the fix for anything broken
 airlock check "SELECT * FROM users" --as analytics-agent   # dry-run before going live
 airlock serve
 ```
 
-`airlock init` validates connectivity to DataHub *and* the warehouse before writing config, tells you what's missing if either fails, and never writes secrets to disk (env vars and secret refs only).
+`airlock init` asks which warehouse you're on (`--kind duckdb | sqlite | postgres | snowflake | bigquery | dbapi`, or it prompts), writes the matching block — including the driver and SQL dialect when you pick `dbapi` — and then opens both connections to tell you what's wrong while you're still at the keyboard. The warehouse check runs through the same adapter `serve` uses, so it covers the driver import too: a missing driver comes back with the `pip install` line rather than an opaque error at your first query. Secrets never land on disk; the file carries `${ENV}` references only.
 
 ### The one-URL-swap promise
 

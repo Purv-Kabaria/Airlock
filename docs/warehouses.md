@@ -6,6 +6,16 @@ across nine of them. Four warehouses have a dedicated adapter; `kind: dbapi` han
 any [PEP 249](https://peps.python.org/pep-0249/) driver, which is nearly every Python database
 library.
 
+How far each one has actually been exercised, so you know what you are trusting:
+
+| Warehouse | Status |
+|---|---|
+| DuckDB | The demo warehouse. Every demo, eval, and gauntlet run goes through it. |
+| SQLite | Unit-tested live against the stdlib driver, including all five DB-API paramstyles. |
+| Postgres | Verified end to end against a real server — see the conformance suite below. |
+| Snowflake, BigQuery | Built from the vendor docs and unit-tested (DSN parsing, request shaping), but never run against a real account. Expect to shake out a bug or two; please file what you find. |
+| `dbapi` | The generic path SQLite is tested through. Any given driver is as good as its PEP 249 compliance. |
+
 The `warehouse` block takes a `kind`, a `dsn`, and the row-limit and timeout defaults. Secrets stay
 as `${ENV}` references, resolved at load — never written to the file. Confirm any connection with
 `airlock doctor -c <config>` before serving; it names the fix for whatever is wrong.
