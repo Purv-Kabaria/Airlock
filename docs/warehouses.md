@@ -11,7 +11,7 @@ How far each one has actually been exercised, so you know what you are trusting:
 | Warehouse | Status |
 |---|---|
 | DuckDB | The demo warehouse. Every demo, eval, and gauntlet run goes through it. |
-| SQLite | Unit-tested live against the stdlib driver, including all five DB-API paramstyles. |
+| SQLite | Unit-tested live against the stdlib driver, including all five DB-API paramstyles, and every masking strategy is executed against a real connection. `generalize_date` is unsupported here; the rest work. |
 | Postgres | Verified end to end against a real server — see the conformance suite below. |
 | Snowflake, BigQuery | Unit-tested (DSN parsing, request shaping) and audited call-by-call against the installed driver — every method, keyword, and parameter style the adapters use is checked to exist with the signature they assume. Never run against a real account, so expect to shake out a bug or two; please file what you find. |
 | `dbapi` | The generic path SQLite is tested through. Any given driver is as good as its PEP 249 compliance. |
@@ -19,6 +19,19 @@ How far each one has actually been exercised, so you know what you are trusting:
 The `warehouse` block takes a `kind`, a `dsn`, and the row-limit and timeout defaults. Secrets stay
 as `${ENV}` references, resolved at load — never written to the file. Confirm any connection with
 `airlock doctor -c <config>` before serving; it names the fix for whatever is wrong.
+
+Then confirm the *enforcement* works there:
+
+```bash
+airlock verify -c airlock.yaml
+```
+
+`verify` renders every masking strategy into your warehouse's dialect, runs each one, and checks what
+comes back — so you learn whether Airlock can actually protect data on this engine before you route
+an agent through it. It is read-only and schema-free: each probe masks a literal inside a scalar
+subquery, so it reads no table, creates nothing, and needs no permission beyond running a `SELECT`.
+That makes it safe to point at production, and `--json` makes it a CI gate. This is how the SQLite
+gaps below were found.
 
 ## DuckDB
 
@@ -40,6 +53,16 @@ warehouse:
   kind: sqlite
   dsn: ./data/warehouse.db            # or sqlite:///abs/path, or :memory:
 ```
+
+SQLite is the one engine that ships almost no string or hash builtins, so Airlock registers the two
+its masks need — `MD5` and `RIGHT` — on every connection, through sqlite3's own function-registration
+API. The digests match what a warehouse with a native `MD5` produces, so a value masks to the same
+pseudonym wherever the query runs.
+
+One gap remains: **`generalize_date` does not work on SQLite.** sqlglot has no valid SQLite rendering
+for `DATE_TRUNC`, and the statement fails rather than returning a wrong date. Mask date columns with
+`hash` instead (`action: { mask: hash }`), or let `mask: auto` pick it by giving the column a
+non-temporal type. `airlock verify` reports this, and every other strategy, against your own database.
 
 ## Postgres
 

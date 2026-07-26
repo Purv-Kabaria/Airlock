@@ -221,6 +221,60 @@ def render_usage(usage: list[DatasetUsage]) -> None:
     console.print(table)
 
 
+def render_verify(kind: str, dialect: str, results: list[Any], *, as_json: bool) -> bool:
+    """Show whether each masking strategy survived the round trip to this warehouse.
+
+    Returns True when every probe passed, so the command can exit non-zero for CI. The rendered SQL
+    is shown for failures only: on success it is noise, and on failure it is the first thing anyone
+    debugging a dialect will want.
+    """
+    if as_json:
+        import json
+
+        print(
+            json.dumps(
+                {
+                    "warehouse": kind,
+                    "dialect": dialect,
+                    "ok": all(r.ok for r in results),
+                    "probes": [
+                        {"strategy": r.strategy, "ok": r.ok, "detail": r.detail, "sql": r.sql}
+                        for r in results
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return all(r.ok for r in results)
+
+    console.print(f"[bold]masking check[/] [dim]{kind} · rendering as the {dialect} dialect[/]")
+    table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    table.add_column("")
+    table.add_column("strategy", style="cyan")
+    table.add_column("result")
+    for r in results:
+        mark = "[green]ok[/]" if r.ok else "[red]FAIL[/]"
+        table.add_row(mark, r.strategy, r.detail if r.ok else f"[red]{r.detail}[/]")
+    console.print(table)
+
+    failed = [r for r in results if not r.ok]
+    if not failed:
+        console.print(
+            f"[green]every masking strategy renders and executes on {kind}.[/] "
+            "[dim]Real columns mask through the same templates and renderer.[/]"
+        )
+        return True
+    for r in failed:
+        console.print(f"\n[dim]{r.strategy} sent:[/]")
+        console.print(Syntax(r.sql, "sql", theme="ansi_dark", word_wrap=True))
+    console.print(
+        f"\n[red]{len(failed)} strategy/strategies do not work on {kind}.[/] "
+        "[dim]Drop them from airlock.yaml's rules, or report the dialect gap - the SQL above is "
+        "what the warehouse rejected.[/]"
+    )
+    return False
+
+
 def _bar(pct: float, width: int = 20) -> str:
     filled = round(width * pct / 100)
     return f"[green]{'=' * filled}[/][dim]{'-' * (width - filled)}[/]"

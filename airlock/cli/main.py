@@ -29,6 +29,7 @@ from airlock.cli.render import (
     render_proposals,
     render_replay,
     render_usage,
+    render_verify,
 )
 from airlock.config import AirlockConfig, autoload_env, load_config
 from airlock.errors import AirlockError, ConfigError, SnapshotUnavailableError
@@ -318,6 +319,40 @@ def check(
             await gateway.aclose()
 
     _run_async(_run())
+
+
+@app.command(rich_help_panel=_SETUP)
+def verify(
+    config: Path = _CONFIG_OPT,
+    as_json: bool = typer.Option(False, "--json", help="Print the report as JSON (for CI)."),
+) -> None:
+    """Prove masking renders and runs on this warehouse. Read-only: reads no table, creates nothing."""
+    from airlock.cli.verify import run_probes
+    from airlock.exec.base import make_adapter
+
+    cfg = _load(config)
+    dialect = cfg.warehouse.dialect or cfg.warehouse.kind
+    salt = cfg.masking.salt or "airlock-verify"
+    results: list[Any] = []
+
+    async def _run() -> None:
+        adapter = make_adapter(cfg.warehouse, pool_size=1)
+        try:
+            await adapter.healthcheck()
+            results.extend(
+                await run_probes(
+                    adapter,
+                    dialect=dialect,
+                    salt=salt,
+                    timeout=cfg.warehouse.defaults.statement_timeout,
+                )
+            )
+        finally:
+            await adapter.close()
+
+    _run_async(_run())
+    ok = render_verify(cfg.warehouse.kind, dialect, results, as_json=as_json)
+    raise typer.Exit(0 if ok else 1)
 
 
 @app.command(rich_help_panel=_INSPECT)

@@ -242,6 +242,39 @@ async def _drain(task: asyncio.Task[Any]) -> None:
         task.exception()  # mark retrieved so asyncio does not log "exception never retrieved"
 
 
+def _register_masking_functions(conn: Any) -> None:
+    """Teach SQLite the scalar functions the mask templates expect.
+
+    Alone among the supported warehouses, SQLite ships almost no string or hash builtins: there is no
+    MD5 and no RIGHT. The masks every other engine binds natively therefore had nothing to resolve,
+    and a `hash`-masked column - the default for any PII that is not an email, phone, or date - failed
+    at query time with "no such function: MD5". That made SQLite unusable for the case it is
+    recommended for, and it was invisible because the adapter's tests cover connections and row
+    shaping, not the SQL masking emits.
+
+    Registering them uses sqlite3's own documented extension point and keeps the masking layer
+    dialect-neutral: the template is untouched, the engine simply gains the function it lacked.
+    Declared deterministic because both are pure - SQLite may then use them in indexed expressions.
+    """
+    import hashlib
+
+    def md5(value: object) -> str | None:
+        # Pseudonymisation, not authentication: this must match what every other warehouse's MD5
+        # returns, so the same value hashes identically wherever the query runs.
+        if value is None:
+            return None
+        return hashlib.md5(str(value).encode("utf-8")).hexdigest()
+
+    def right(value: object, count: object) -> str | None:
+        if value is None:
+            return None
+        chars = int(count) if isinstance(count, (int, float, str)) else 0
+        return str(value)[-chars:] if chars > 0 else ""
+
+    conn.create_function("MD5", 1, md5, deterministic=True)
+    conn.create_function("RIGHT", 2, right, deterministic=True)
+
+
 def make_sqlite_adapter(dsn: str, *, pool_size: int = 8) -> DbapiAdapter:
     """SQLite over the stdlib `sqlite3` driver. No dependency, every platform."""
     import sqlite3
@@ -254,6 +287,7 @@ def make_sqlite_adapter(dsn: str, *, pool_size: int = 8) -> DbapiAdapter:
         # pool never hands one connection to two threads at once (the semaphore + free-list ensure
         # that), so cross-thread use is serialized and safe.
         conn = sqlite3.connect(path, check_same_thread=False)
+        _register_masking_functions(conn)
         return conn
 
     return DbapiAdapter(
