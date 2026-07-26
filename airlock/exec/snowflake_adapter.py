@@ -146,7 +146,7 @@ class SnowflakeAdapter:
         execute() on a worker thread. Failure is logged, never raised: this runs while a
         CancelledError is already propagating, and masking that would lose the real outcome.
         """
-        import snowflake.connector
+        from snowflake.connector import errors as sf_errors
 
         query_id = getattr(cursor, "sfqid", None)
         if not query_id:
@@ -165,7 +165,7 @@ class SnowflakeAdapter:
 
         try:
             await asyncio.to_thread(_cancel)
-        except (snowflake.connector.errors.Error, OSError) as exc:
+        except (sf_errors.Error, OSError) as exc:
             log.warning("snowflake.cancel_failed", query_id=query_id, detail=str(exc))
 
     async def list_tables(self) -> list[str]:
