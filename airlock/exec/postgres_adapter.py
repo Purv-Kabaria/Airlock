@@ -18,6 +18,10 @@ from airlock.logging import get_logger
 
 log = get_logger("airlock.exec.postgres")
 
+# Cancellation is cleanup on a path where the client has already gone; bound it so a wedged server
+# cannot hold the connection's release open indefinitely.
+_CANCEL_TIMEOUT_SEC = 5.0
+
 
 class PostgresAdapter:
     kind = "postgres"
@@ -51,7 +55,7 @@ class PostgresAdapter:
                 rows = await cur.fetchall()
                 columns = [d.name for d in cur.description]
         except asyncio.CancelledError:
-            conn.cancel()
+            await self._cancel(conn)
             raise
         except psycopg.Error as exc:
             raise WarehouseUnavailableError(self.kind, str(exc).splitlines()[0]) from exc
@@ -63,6 +67,29 @@ class PostgresAdapter:
             for row in rows[:row_limit]
         ]
         return QueryResult(columns=columns, rows=shaped, truncated=truncated)
+
+    async def _cancel(self, conn: Any) -> None:
+        """Stop the running statement in Postgres after its client went away.
+
+        psycopg's `cancel()` is a blocking libpq round-trip, so calling it from the event loop
+        stalls every other request while one disconnect is cleaned up - the opposite of what a
+        gateway wants when a burst of clients drops at once. `cancel_safe()` is the non-blocking
+        form, and on libpq 17+ the encrypted one; it falls back to the old implementation itself on
+        older libpq. psycopg before 3.2 has no `cancel_safe`, so that path keeps the blocking call
+        but moves it onto a worker thread.
+
+        Failure is logged, not raised: this runs while a CancelledError is already propagating.
+        """
+        import psycopg
+
+        cancel_safe = getattr(conn, "cancel_safe", None)
+        try:
+            if cancel_safe is not None:
+                await cancel_safe(timeout=_CANCEL_TIMEOUT_SEC)
+            else:
+                await asyncio.to_thread(conn.cancel)
+        except (psycopg.Error, OSError) as exc:
+            log.warning("postgres.cancel_failed", detail=str(exc).splitlines()[0])
 
     async def list_tables(self) -> list[str]:
         _, rows = await self._query(

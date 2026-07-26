@@ -16,6 +16,7 @@ not a policy port" claim, checked rather than asserted.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import UTC, datetime
 
@@ -136,6 +137,40 @@ async def test_masking_executes_natively_on_postgres(tmp_path) -> None:
         assert SALT not in sql, "the masking salt must never reach the envelope"
     finally:
         await gateway.aclose()
+
+
+async def test_a_dropped_client_stops_the_query_inside_postgres() -> None:
+    """README edge 23, checked against the server rather than assumed.
+
+    Cancelling the caller has to reach Postgres, or a disconnected agent leaves a statement running
+    and billing. pg_stat_activity is the only honest witness for that.
+    """
+    import psycopg
+
+    from airlock.exec.postgres_adapter import PostgresAdapter
+
+    async def sleeping_queries() -> list[str]:
+        async with await psycopg.AsyncConnection.connect(DSN, autocommit=True) as conn:
+            cur = await conn.execute(
+                "SELECT query FROM pg_stat_activity WHERE state = 'active' "
+                "AND query LIKE '%pg_sleep%' AND pid <> pg_backend_pid()"
+            )
+            return [row[0] for row in await cur.fetchall()]
+
+    adapter = PostgresAdapter(DSN, pool_size=2)
+    try:
+        task = asyncio.ensure_future(adapter.run("SELECT pg_sleep(60)", timeout=120, row_limit=10))
+        await asyncio.sleep(2.0)
+        assert await sleeping_queries(), "the query never reached the server"
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        await asyncio.sleep(2.0)  # let Postgres process the cancellation request
+        assert not await sleeping_queries(), "the statement survived the disconnect"
+    finally:
+        await adapter.close()
 
 
 async def test_introspection_reads_the_real_information_schema(tmp_path) -> None:
