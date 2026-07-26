@@ -15,7 +15,7 @@ from rich.table import Table
 
 from airlock.audit.datahub_sink import DatasetUsage
 from airlock.audit.record import AuditRecord
-from airlock.engine.verdicts import Envelope, EnvelopeStatus
+from airlock.engine.verdicts import Envelope, EnvelopeStatus, ReasonCode
 from airlock.policy.coverage import CoverageReport, DatasetGap, SuspectedGap
 
 console = Console()
@@ -46,7 +46,7 @@ def render_envelope(envelope: Envelope) -> None:
         f"[dim]{envelope.request_id} · {envelope.principal} · {snapshot}[/]"
     )
     summary = _summarize(
-        [(v.action, v.subject) for v in envelope.verdicts], envelope.status
+        [(str(v.code), v.action, v.subject) for v in envelope.verdicts], envelope.status
     )
     if summary:
         console.print(summary)
@@ -83,17 +83,31 @@ _CHANGE = (("substitute", "table", "redirected"), ("mask", "column", "masked"),
            ("deny_column", "column", "removed"))
 
 
-def _summarize(pairs: list[tuple[str, str]], status: EnvelopeStatus) -> str | None:
-    """One plain-language line of what happened, or None when the status line already says it."""
+def _summarize(
+    verdicts: list[tuple[str, str, str]], status: EnvelopeStatus
+) -> str | None:
+    """One plain-language line of what happened, or None when the status line already says it.
+
+    Takes (code, action, subject) rather than just the action because monitor mode emits the very
+    same mask and deny verdicts as enforcement does - it just does not apply them. Summarising on
+    the action alone would report "1 column masked" over rows that came back completely raw, which
+    is the one place a wrong summary could convince someone they are protected when they are not.
+    """
     if status is EnvelopeStatus.ERROR:
         return None  # the single error verdict's reason is the whole message
+    if any(code == ReasonCode.MONITOR for code, _, _ in verdicts):
+        observed = sum(1 for _, act, _ in verdicts if act in {a for a, _, _ in _CHANGE})
+        return (
+            f"[yellow]Monitor mode: nothing was changed.[/] {observed} verdict(s) observed; "
+            "the rows below are unmasked."
+        )
     if status is EnvelopeStatus.DENIED:
-        blockers = [subj for act, subj in pairs if act in ("deny_statement", "scope_deny")]
+        blockers = [subj for _, act, subj in verdicts if act in ("deny_statement", "scope_deny")]
         if not blockers:
             return None
         more = f" (+{len(blockers) - 1} more)" if len(blockers) > 1 else ""
         return f"[bold]Blocked on {blockers[0]}{more}.[/]"
-    counts = Counter(act for act, _ in pairs)
+    counts = Counter(act for _, act, _ in verdicts)
     parts = [
         f"{counts[act]} {noun}{'' if counts[act] == 1 else 's'} {verb}"
         for act, noun, verb in _CHANGE
@@ -325,7 +339,11 @@ def render_replay(record: dict[str, Any]) -> None:
     verdicts = record.get("verdicts") or []
     if known is not None:
         summary = _summarize(
-            [(str(v.get("action", "")), str(v.get("subject", ""))) for v in verdicts], known
+            [
+                (str(v.get("code", "")), str(v.get("action", "")), str(v.get("subject", "")))
+                for v in verdicts
+            ],
+            known,
         )
         if summary:
             console.print(summary)
