@@ -341,18 +341,22 @@ def _print_next_steps(gms: str) -> None:
             }
         }
     }
+    airlock = _airlock_display()
     print("\n" + "=" * 70)
     print("Airlock demo is up.")
     print(f"  DataHub UI : {ui}   (login datahub / datahub)")
-    print("  Add this to your MCP client (e.g. Claude Desktop):\n")
-    print(json.dumps(config, indent=2))
-    airlock = _airlock_display()
+    # Lead with the zero-friction win: `check` needs no client wiring, so a judge sees a governed
+    # decision in one command. The MCP block below is for driving it from a real agent, which takes
+    # editing a client config and restarting it - the slower path, so it comes second.
+    print("\n  See it work now (no client to set up):")
     print(
-        f'\n  Then try:  {airlock} check "SELECT name, email, ssn FROM users_raw" '
+        f'    {airlock} check "SELECT name, email, ssn FROM users_raw" '
         "--as growth-agent -c demo/airlock.yaml"
     )
-    print(f"  Watch it : {airlock} tail -c demo/airlock.yaml")
-    print("  See demo/SCRIPT.md for the 3-minute demo path.")
+    print(f"    {airlock} tail -c demo/airlock.yaml        (live decision stream, second pane)")
+    print("\n  Drive it from an agent (Claude Desktop, Cursor, ...) - paste into your MCP client:\n")
+    print(json.dumps(config, indent=2))
+    print("\n  Full 3-minute demo path: demo/SCRIPT.md")
     print("=" * 70)
 
 
