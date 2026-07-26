@@ -136,7 +136,7 @@ class Gateway:
             return
         except SnapshotUnavailableError:
             persisted = self._store.persisted_catalog()
-            allow_stale = self._config.datahub.snapshot.stale_policy == "serve_stale_readonly"
+            allow_stale = self._config.snapshot.stale_policy == "serve_stale_readonly"
             if persisted is None or not allow_stale:
                 raise
             self._store.install(self._graph_from_persisted())
@@ -171,7 +171,7 @@ class Gateway:
 
     async def refresh_loop(self) -> None:
         """Background snapshot refresh. Failures are logged and retried on the next tick."""
-        interval = self._config.datahub.snapshot.refresh_interval
+        interval = self._config.snapshot.refresh_interval
         while True:
             await asyncio.sleep(interval)
             try:
@@ -488,11 +488,11 @@ class Gateway:
         return graph
 
     def _staleness_note(self, graph: PolicyGraph) -> Verdict | None:
-        max_staleness = self._config.datahub.snapshot.max_staleness
+        max_staleness = self._config.snapshot.max_staleness
         age = (datetime.now(UTC) - graph.compiled_at).total_seconds()
         if age <= max_staleness:
             return None
-        if self._config.datahub.snapshot.stale_policy == "fail_closed":
+        if self._config.snapshot.stale_policy == "fail_closed":
             raise StaleSnapshotError(
                 f"Policy snapshot is {int(age)}s old, past the {int(max_staleness)}s budget."
             )
@@ -508,10 +508,10 @@ class Gateway:
         graph = self._store.current
         if graph is None:
             return False
-        if self._config.datahub.snapshot.stale_policy != "fail_closed":
+        if self._config.snapshot.stale_policy != "fail_closed":
             return True
         age = (datetime.now(UTC) - graph.compiled_at).total_seconds()
-        return age <= self._config.datahub.snapshot.max_staleness
+        return age <= self._config.snapshot.max_staleness
 
     async def healthcheck(self) -> None:
         await self._adapter.healthcheck()

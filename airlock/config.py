@@ -75,6 +75,17 @@ class DatahubConfig(_Strict):
     snapshot: SnapshotConfig = SnapshotConfig()
 
 
+class CatalogConfig(_Strict):
+    """A reviewed local catalog file, for deployments with no DataHub.
+
+    The alternative to `datahub:`, not an addition to it - a snapshot has exactly one source, so a
+    decision can always name where its facts came from. See docs/adr/001-local-catalog.md for why
+    this exists despite DataHub being the intended source.
+    """
+
+    file: str
+
+
 class WarehouseDefaults(_Strict):
     row_limit: int = 10000
     statement_timeout: float = 30.0
@@ -293,7 +304,10 @@ class ServerConfig(_Strict):
 
 
 class AirlockConfig(_Strict):
-    datahub: DatahubConfig
+    # Exactly one catalog source. `datahub` is the intended one; `catalog` is the local-file path for
+    # deployments that have no DataHub (see _one_catalog_source below).
+    datahub: DatahubConfig | None = None
+    catalog: CatalogConfig | None = None
     warehouse: WarehouseConfig
     enforcement: EnforcementConfig = EnforcementConfig()
     rules: list[RuleConfig]
@@ -301,6 +315,50 @@ class AirlockConfig(_Strict):
     audit: AuditConfig = AuditConfig()
     masking: MaskingConfig = MaskingConfig()
     server: ServerConfig = ServerConfig()
+
+    @property
+    def snapshot(self) -> SnapshotConfig:
+        """Freshness settings for the snapshot, whatever produced it.
+
+        A local catalog file has no refresh cadence of its own, so the defaults apply: refresh
+        re-reads the file exactly as it re-compiles from DataHub.
+        """
+        return self.datahub.snapshot if self.datahub is not None else SnapshotConfig()
+
+    def require_datahub(self) -> DatahubConfig:
+        """The DataHub settings, for the paths that cannot work without them.
+
+        Write-back and snapshot compilation from the graph are DataHub-only features. Naming that
+        requirement here keeps every caller from re-deriving it, and turns "the config has no
+        datahub block" into one sentence that says what to do about it.
+        """
+        if self.datahub is None:
+            raise ConfigError(
+                "this needs a `datahub:` block, but the config uses a local `catalog:` file. "
+                "DataHub write-back, lineage, and ownership are unavailable on the local catalog."
+            )
+        return self.datahub
+
+    @model_validator(mode="after")
+    def _one_catalog_source(self) -> AirlockConfig:
+        """Exactly one source of catalog facts, so every decision can name where its facts came from.
+
+        Accepting both would mean silently choosing one, and a policy whose origin is ambiguous is
+        the thing content-addressed snapshots exist to prevent. Accepting neither would leave the
+        gateway with no facts at all, which must fail at config load rather than at first query.
+        """
+        if self.datahub is None and self.catalog is None:
+            raise ValueError(
+                "no catalog source: set `datahub:` (recommended - lineage, ownership, and shared "
+                "classification), or `catalog: { file: ./catalog.yaml }` for a reviewed local file "
+                "when you have no DataHub. Run `airlock init` to write either."
+            )
+        if self.datahub is not None and self.catalog is not None:
+            raise ValueError(
+                "both `datahub:` and `catalog:` are set, but a snapshot has exactly one source. "
+                "Remove whichever you are not using."
+            )
+        return self
 
     @model_validator(mode="after")
     def _unique_rule_ids(self) -> AirlockConfig:

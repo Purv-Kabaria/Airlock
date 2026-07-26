@@ -210,7 +210,7 @@ def _guarded_verdict(
     ref: GuardedRef,
     table: str,
     fact: ColumnFact,
-    url: str,
+    url: str | None,
     enforcement: EnforcementSettings,
 ) -> Verdict | None:
     subject = Subject.column(table, fact.name)
@@ -392,5 +392,12 @@ def _classification_phrase(col: ColumnRef) -> str:
     return "sensitive"
 
 
-def _catalog_url(graph: PolicyGraph, urn: str) -> str:
+def _catalog_url(graph: PolicyGraph, urn: str) -> str | None:
+    """A deep link to the dataset in the catalog, when the catalog is something you can open.
+
+    A local catalog file has a path, not a URL, so there is nothing to link to - emitting
+    `./catalog.yaml/dataset/urn:li:...` would be a broken link presented as a citation.
+    """
+    if not graph.source_url.startswith(("http://", "https://")):
+        return None
     return f"{graph.source_url.rstrip('/')}/dataset/{urn}"

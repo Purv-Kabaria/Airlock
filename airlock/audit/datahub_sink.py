@@ -166,7 +166,7 @@ class DatahubLedgerSink:
         elements = self._existing_memory(client, urn)
         elements.append(
             InstitutionalMemoryMetadataClass(
-                url=f"{self._config.datahub.url.rstrip('/')}/airlock/{record.request_id}",
+                url=f"{self._config.require_datahub().url.rstrip('/')}/airlock/{record.request_id}",
                 description=f"airlock: {summary}",
                 createStamp=stamp,
             )
@@ -233,7 +233,7 @@ class DatahubLedgerSink:
 
             self._client = DataHubGraph(
                 DatahubClientConfig(
-                    server=self._config.datahub.url, token=self._config.datahub.token
+                    server=self._config.require_datahub().url, token=self._config.require_datahub().token
                 )
             )
         return self._client
@@ -303,7 +303,7 @@ def write_classification_proposals(
     from datahub.metadata.schema_classes import StructuredPropertyValueAssignmentClass
 
     client = DataHubGraph(
-        DatahubClientConfig(server=config.datahub.url, token=config.datahub.token)
+        DatahubClientConfig(server=config.require_datahub().url, token=config.require_datahub().token)
     )
     _ensure_suspected_definition(client)
     for urn, columns in proposals.items():
@@ -336,7 +336,7 @@ def read_usage(config: AirlockConfig, datasets: Mapping[str, str]) -> list[Datas
     from datahub.metadata.schema_classes import DatasetUsageStatisticsClass
 
     client = DataHubGraph(
-        DatahubClientConfig(server=config.datahub.url, token=config.datahub.token)
+        DatahubClientConfig(server=config.require_datahub().url, token=config.require_datahub().token)
     )
     out: list[DatasetUsage] = []
     for urn, name in datasets.items():

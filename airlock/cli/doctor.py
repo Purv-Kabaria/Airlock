@@ -112,7 +112,9 @@ def _python() -> Check:
 def _docker(cfg: AirlockConfig | None) -> Check:
     """Docker only matters for the demo stack. Pointed at your own DataHub you never need it, and
     failing doctor over it would train operators to ignore a red row."""
-    if cfg is not None and not _is_local(cfg.datahub.url):
+    if cfg is not None and cfg.datahub is None:
+        return Check("docker", "skip", "not needed: this config uses a local catalog file")
+    if cfg is not None and cfg.datahub is not None and not _is_local(cfg.datahub.url):
         return Check("docker", "skip", f"not needed: DataHub is remote ({cfg.datahub.url})")
     if shutil.which("docker") is None:
         return Check(
@@ -137,9 +139,14 @@ def _is_local(url: str) -> bool:
 def _datahub(cfg: AirlockConfig) -> Check:
     from airlock.policy.compile import NotDataHubError, ping
 
+    if cfg.datahub is None:
+        # A local catalog is the whole source of facts here, so its readability is the check that
+        # matters. Reported under the same row name so the checklist has a fixed shape either way.
+        return _catalog_file(cfg)
+    datahub = cfg.datahub
     try:
         ping(cfg)
-        return Check("datahub", "pass", f"reachable at {cfg.datahub.url}")
+        return Check("datahub", "pass", f"reachable at {datahub.url}")
     except NotDataHubError as exc:
         # Reachable, but the wrong service - a port collision, not a down DataHub. Saying
         # "unreachable" here would send the operator to restart a stack that is already up.
@@ -153,10 +160,35 @@ def _datahub(cfg: AirlockConfig) -> Check:
     except Exception as exc:
         fix = (
             "start the stack with `python demo/up.py`"
-            if _is_local(cfg.datahub.url)
+            if _is_local(datahub.url)
             else "check datahub.url and the token, and that this host can reach it"
         )
-        return Check("datahub", "fail", f"unreachable at {cfg.datahub.url} ({exc})", fix=fix)
+        return Check("datahub", "fail", f"unreachable at {datahub.url} ({exc})", fix=fix)
+
+
+def _catalog_file(cfg: AirlockConfig) -> Check:
+    """The local catalog stands where DataHub would, so a missing or malformed file is fatal the
+    same way an unreachable GMS is: with no facts there is nothing to enforce."""
+    from pathlib import Path
+
+    from airlock.errors import ConfigError
+    from airlock.policy.file_catalog import load_catalog_file
+
+    assert cfg.catalog is not None
+    path = Path(cfg.catalog.file)
+    if not path.exists():
+        return Check(
+            "catalog",
+            "fail",
+            f"{path} does not exist",
+            fix="run `airlock init --local` to draft one from your warehouse schema",
+        )
+    try:
+        datasets, _ = load_catalog_file(path, cfg.warehouse.kind)
+    except ConfigError as exc:
+        return Check("catalog", "fail", str(exc), fix="fix the file, then re-run")
+    columns = sum(len(d.columns) for d in datasets.values())
+    return Check("catalog", "pass", f"{path}: {len(datasets)} dataset(s), {columns} column(s)")
 
 
 def _warehouse(cfg: AirlockConfig) -> Check:

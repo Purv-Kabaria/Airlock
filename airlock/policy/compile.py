@@ -113,26 +113,43 @@ def ping(config: AirlockConfig, *, timeout: float = 5.0) -> None:
     Raises on an unreachable URL, and `NotDataHubError` when something answers but is not GMS - a
     200 from an unrelated service on the same port must not read as success.
     """
-    url = config.datahub.url.rstrip("/") + "/config"
-    headers = {"Authorization": f"Bearer {config.datahub.token}"} if config.datahub.token else {}
+    datahub = config.require_datahub()
+    url = datahub.url.rstrip("/") + "/config"
+    headers = {"Authorization": f"Bearer {datahub.token}"} if datahub.token else {}
     resp = httpx.get(url, headers=headers, timeout=timeout)
     resp.raise_for_status()
     if not _is_gms_config(resp.text):
         raise NotDataHubError(
-            f"{config.datahub.url} answered but is not a DataHub GMS "
+            f"{datahub.url} answered but is not a DataHub GMS "
             "(another service may hold this port)"
         )
 
 
 def compile_snapshot(config: AirlockConfig) -> PolicyGraph:
-    """Read DataHub and build a PolicyGraph. Raises SnapshotUnavailableError on any failure."""
+    """Build a PolicyGraph from the configured catalog source.
+
+    The single entry point for producing a snapshot. DataHub reads live in this module; the local
+    file source lives in `policy/file_catalog.py`, so "the only module that reads DataHub" stays
+    true of this one. Raises SnapshotUnavailableError on any failure.
+    """
+    if config.catalog is not None:
+        from airlock.policy.file_catalog import compile_from_file
+
+        return compile_from_file(config)
+    assert config.datahub is not None  # config validation guarantees exactly one source
+    return _compile_from_datahub(config)
+
+
+def _compile_from_datahub(config: AirlockConfig) -> PolicyGraph:
     from datahub.ingestion.graph.client import DatahubClientConfig, DataHubGraph
+
+    datahub = config.require_datahub()
 
     try:
         client = DataHubGraph(
             DatahubClientConfig(
-                server=config.datahub.url,
-                token=config.datahub.token,
+                server=datahub.url,
+                token=datahub.token,
                 timeout_sec=_CLIENT_TIMEOUT_SEC,
                 retry_max_times=_CLIENT_RETRIES,
             )
@@ -159,7 +176,7 @@ def compile_snapshot(config: AirlockConfig) -> PolicyGraph:
         raise
     except Exception as exc:
         raise SnapshotUnavailableError(
-            f"Could not compile a policy snapshot from DataHub at {config.datahub.url}: "
+            f"Could not compile a policy snapshot from DataHub at {datahub.url}: "
             f"{_datahub_failure(exc)}"
         ) from exc
 
@@ -171,7 +188,7 @@ def compile_snapshot(config: AirlockConfig) -> PolicyGraph:
         enforcement=config.enforcement_settings(),
         principals=config.compiled_principals(),
         compiled_at=datetime.now(UTC),
-        source_url=config.datahub.url,
+        source_url=datahub.url,
     )
     log.info(
         "snapshot.compiled",
