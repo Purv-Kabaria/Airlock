@@ -41,6 +41,29 @@ warehouse:
   dsn: ${WAREHOUSE_DSN}               # postgresql://user:pass@host:5432/dbname
 ```
 
+psycopg runs on Airlock's own event loop, and it refuses the `ProactorEventLoop` that asyncio selects
+by default on Windows. The CLI picks a compatible loop before it opens one, so `airlock serve`,
+`check`, and `doctor` need nothing from you. If you embed the gateway in your own asyncio program on
+Windows, set the policy yourself before the loop starts:
+
+```python
+import asyncio, sys
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+```
+
+Skip it and the first query raises `AIRLOCK-441` naming this exact fix rather than a driver error.
+
+To check the whole path against a real server — masking rendered in Postgres SQL, executed, and read
+back — run the conformance suite against a throwaway container:
+
+```bash
+docker run -d --name airlock-pg -e POSTGRES_PASSWORD=airlock -e POSTGRES_USER=airlock \
+    -e POSTGRES_DB=airlockdemo -p 55432:5432 postgres:16-alpine
+AIRLOCK_TEST_POSTGRES_DSN=postgresql://airlock:airlock@localhost:55432/airlockdemo \
+    uv run pytest tests/integration -q
+```
+
 ## Snowflake
 
 Needs `pip install airlock-gateway[snowflake]`. The DSN is a SQLAlchemy-style URL; anything after the

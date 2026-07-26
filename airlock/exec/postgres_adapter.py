@@ -148,4 +148,19 @@ class PostgresAdapter:
     async def _connect(self) -> Any:
         import psycopg
 
-        return await psycopg.AsyncConnection.connect(self._dsn, autocommit=True)
+        try:
+            return await psycopg.AsyncConnection.connect(self._dsn, autocommit=True)
+        except psycopg.InterfaceError as exc:
+            # psycopg shares Airlock's loop, and it refuses the ProactorEventLoop asyncio picks by
+            # default on Windows. The CLI selects a compatible loop before it opens one, so this is
+            # only reachable when something else built the loop - an app embedding the gateway, or a
+            # test runner. Name the one line that fixes it instead of passing the driver's error up.
+            if "ProactorEventLoop" not in str(exc):
+                raise
+            raise WarehouseUnavailableError(
+                self.kind,
+                "psycopg cannot run on Windows' default ProactorEventLoop. Airlock's CLI picks a "
+                "compatible loop for you; when you create the loop yourself, call "
+                "asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy()) "
+                "before asyncio.run().",
+            ) from exc

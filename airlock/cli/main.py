@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from collections.abc import Coroutine, Iterator
 from pathlib import Path
@@ -19,6 +20,7 @@ import typer
 from rich.console import Console
 
 import airlock.cli._encoding  # noqa: F401  side effect: UTF-8 stdout/stderr, before any Console
+from airlock.cli._eventloop import select_event_loop_for
 from airlock.cli.render import (
     console,
     render_audit_line,
@@ -125,51 +127,151 @@ def mcp_config(
     console.print(render(client, entry, transport=transport, missing=missing))
 
 
+# What the wizard needs per warehouse: the DSN it offers, the shape hint shown in the prompt, and
+# the optional extra that ships the driver. Adding a warehouse is one row here, not a new branch.
+_WAREHOUSE_HELP: dict[str, tuple[str, str, str | None]] = {
+    "duckdb": ("./data/warehouse.duckdb", "a file path, or :memory:", None),
+    "sqlite": ("./data/warehouse.db", "a file path, or :memory: - no driver to install", None),
+    "postgres": ("${WAREHOUSE_DSN}", "postgresql://user:pass@host:5432/dbname", "postgres"),
+    "snowflake": (
+        "${WAREHOUSE_DSN}",
+        "snowflake://user:pass@account/db/schema?warehouse=WH",
+        "snowflake",
+    ),
+    "bigquery": ("${WAREHOUSE_DSN}", "bigquery://project-id/dataset?location=US", "bigquery"),
+    "dbapi": ("${WAREHOUSE_DSN}", "whatever your driver's connect() takes first", None),
+}
+
+
 @app.command(rich_help_panel=_SETUP)
 def init(
     path: Path = typer.Option("airlock.yaml", "--path", "-p", help="Where to write the config."),
+    kind: str | None = typer.Option(
+        None, "--kind", help=f"Warehouse: {' | '.join(_WAREHOUSE_HELP)}. Prompted if omitted."
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Accept defaults without prompting."),
 ) -> None:
-    """Write an airlock.yaml with env-ref secrets. Validates nothing is overwritten silently."""
+    """Write an airlock.yaml for your warehouse, then check both connections."""
     if path.exists() and not yes and not typer.confirm(f"{path} exists. Overwrite?"):
         raise typer.Exit(1)
+
+    if kind is None:
+        kind = (
+            "duckdb"
+            if yes
+            else typer.prompt(f"Warehouse ({' | '.join(_WAREHOUSE_HELP)})", default="duckdb")
+        )
+    if kind not in _WAREHOUSE_HELP:
+        err.print(
+            f"[red]unknown warehouse {kind!r}.[/] Choose one of: {', '.join(_WAREHOUSE_HELP)}. "
+            "Anything with a PEP 249 driver works via `dbapi` - see docs/warehouses.md."
+        )
+        raise typer.Exit(2)
+
+    default_dsn, shape, extra = _WAREHOUSE_HELP[kind]
     datahub_url = (
         "http://localhost:8080"
         if yes
         else typer.prompt("DataHub GMS URL", default="http://localhost:8080")
     )
-    warehouse_dsn = (
-        "./demo/warehouse.duckdb"
-        if yes
-        else typer.prompt("DuckDB warehouse path", default="./demo/warehouse.duckdb")
+    dsn = default_dsn if yes else typer.prompt(f"Warehouse DSN - {shape}", default=default_dsn)
+    driver = dialect = None
+    if kind == "dbapi":
+        driver = "pymysql" if yes else typer.prompt("Driver module (pymysql, pyodbc, trino.dbapi)")
+        dialect = "mysql" if yes else typer.prompt("sqlglot dialect (mysql, trino, clickhouse)")
+
+    path.write_text(
+        _DEFAULT_CONFIG.format(
+            url=datahub_url, warehouse=_warehouse_block(kind, dsn, driver, dialect)
+        ),
+        encoding="utf-8",
     )
-    path.write_text(_DEFAULT_CONFIG.format(url=datahub_url, dsn=warehouse_dsn), encoding="utf-8")
     console.print(f"[green]Wrote {path}[/] (secrets stay as ${{...}} env refs, never on disk).")
-    _report_reachable(datahub_url, warehouse_dsn)
+    _probe_datahub(datahub_url)
+    _probe_warehouse(kind, dsn, driver, dialect, extra)
     console.print("Set env vars for any ${...} refs, then run `airlock doctor` for full checks.")
 
 
-def _report_reachable(datahub_url: str, warehouse_dsn: str) -> None:
-    """Non-blocking connectivity probe so you find a wrong URL/path now, not at first serve."""
+def _warehouse_block(kind: str, dsn: str, driver: str | None, dialect: str | None) -> str:
+    lines = [f"  kind: {kind}", f"  dsn: {dsn}"]
+    if kind == "dbapi":
+        lines += [
+            f"  driver: {driver}",
+            f"  dialect: {dialect}",
+            "  connect_args: {}            # keyword args passed to the driver's connect()",
+        ]
+    lines.append("  defaults: { row_limit: 10000, statement_timeout: 30s }")
+    return "\n".join(lines)
+
+
+_ENV_REF = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
+
+
+def _env_value(dsn: str) -> str | None:
+    """The DSN itself, or the value behind a `${VAR}` reference - None when that var is unset."""
+    ref = _ENV_REF.match(dsn.strip())
+    return os.environ.get(ref.group(1)) if ref else dsn
+
+
+def _probe_datahub(url: str) -> None:
     import httpx
 
     try:
-        httpx.get(datahub_url.rstrip("/") + "/config", timeout=3).raise_for_status()
-        console.print(f"  [green]ok[/]   DataHub reachable at {datahub_url}")
+        httpx.get(url.rstrip("/") + "/config", timeout=3).raise_for_status()
+        console.print(f"  [green]ok[/]   DataHub reachable at {url}")
     except httpx.HTTPError as exc:
         console.print(
-            f"  [yellow]warn[/] DataHub not reachable at {datahub_url} ({exc}); "
+            f"  [yellow]warn[/] DataHub not reachable at {url} ({exc}); "
             "start it, then `airlock doctor`"
         )
-    import duckdb
 
+
+def _probe_warehouse(
+    kind: str, dsn: str, driver: str | None, dialect: str | None, extra: str | None
+) -> None:
+    """Open the warehouse through the real adapter, so the check covers exactly what `serve` does.
+
+    Probing via `make_adapter` rather than a per-kind snippet means one code path validates every
+    warehouse - including the lazy driver import, which is the failure a first-time user is most
+    likely to hit and the one an opaque error at first query explains worst.
+    """
+    from airlock.config import WarehouseConfig
+    from airlock.errors import AirlockError, ConfigError
+    from airlock.exec.base import make_adapter
+
+    resolved = _env_value(dsn)
+    if resolved is None:
+        console.print(
+            f"  [dim]skip[/] warehouse check: {dsn} is unset in this shell; "
+            "export it, then `airlock doctor`"
+        )
+        return
+
+    async def check() -> None:
+        adapter = make_adapter(
+            WarehouseConfig.model_validate(
+                {"kind": kind, "dsn": resolved, "driver": driver, "dialect": dialect}
+            ),
+            pool_size=1,
+        )
+        try:
+            await adapter.healthcheck()
+        finally:
+            await adapter.close()
+
+    select_event_loop_for(kind)  # the probe opens a loop of its own; postgres needs the right one
     try:
-        conn = duckdb.connect(warehouse_dsn.removeprefix("duckdb:///").removeprefix("duckdb://"))
-        conn.execute("SELECT 1")
-        conn.close()
-        console.print(f"  [green]ok[/]   DuckDB warehouse opens at {warehouse_dsn}")
-    except (duckdb.Error, OSError) as exc:
-        console.print(f"  [yellow]warn[/] DuckDB warehouse not usable at {warehouse_dsn} ({exc})")
+        asyncio.run(check())
+    except ModuleNotFoundError:
+        install = f"pip install 'airlock-gateway[{extra}]'" if extra else f"pip install {driver}"
+        console.print(f"  [yellow]warn[/] the {kind} driver is not installed - {install}")
+    except (AirlockError, ConfigError, OSError, ValueError) as exc:
+        detail = str(exc).splitlines()[0]
+        console.print(
+            f"  [yellow]warn[/] {kind} not reachable ({detail}); fix the DSN, then `airlock doctor`"
+        )
+    else:
+        console.print(f"  [green]ok[/]   {kind} warehouse reachable")
 
 
 @app.command(rich_help_panel=_INSPECT)
@@ -564,10 +666,14 @@ def policy_diff(
 def _load(config: Path) -> AirlockConfig:
     autoload_env(config)
     try:
-        return load_config(config)
+        cfg = load_config(config)
     except ConfigError as exc:
         err.print(f"[red]config error:[/] {exc}")
         raise typer.Exit(2) from exc
+    # Every command loads config before it opens a loop, which is the one moment the policy can
+    # still be chosen for the warehouse this process will actually talk to.
+    select_event_loop_for(cfg.warehouse.kind)
+    return cfg
 
 
 def _run_async(coro: Coroutine[Any, Any, None]) -> None:
@@ -617,9 +723,7 @@ datahub:
     stale_policy: fail_closed
 
 warehouse:
-  kind: duckdb
-  dsn: {dsn}
-  defaults: {{ row_limit: 10000, statement_timeout: 30s }}
+{warehouse}
 
 enforcement:
   mode: enforce
