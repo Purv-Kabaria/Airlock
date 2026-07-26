@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Purv-Kabaria/Airlock/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Purv-Kabaria/Airlock/actions/workflows/ci.yml/badge.svg?branch=main"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue">
   <img alt="Status" src="https://img.shields.io/badge/status-hackathon%20build-orange">
