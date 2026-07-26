@@ -11,7 +11,7 @@ against the real warehouse. The write-back beat runs its two queries through `Ga
 the same wiring `airlock serve` uses - so the properties it then reads out of DataHub were written
 by those queries seconds earlier, not left over from an earlier session.
 
-    python demo/record.py            # presentation timing (~2:45), for recording
+    python demo/record.py            # presentation timing (~2:51), for recording
     python demo/record.py --rehearse # short pauses, and every beat is checked; exits non-zero on
                                      # any beat that did not produce the verdicts the script claims
 
@@ -78,11 +78,26 @@ def _airlock_cmd() -> list[str]:
 AIRLOCK = _airlock_cmd()
 
 
+# The per-beat pauses below are weighted against each other by how much there is to read. This
+# multiplier scales all of them together so the take lands on the narration's length: measured at
+# 1.0 the screen ran 2:10 while the script reads 2:52, which leaves the voice still talking over a
+# finished screen. Scaling preserves the relative weighting and fixes the total. Tuned to land
+# around 2:51, close to the script and still clear of the 3:00 hard limit -- `--rehearse` prints
+# both numbers so this stays honest after an edit to either side.
+PRESENTATION_PACE = 1.30
+
+# Words in demo/VIDEO.md's spoken lines, and the rate to read them at. Used to project the take
+# length during a rehearsal so the script and the screen cannot drift apart unnoticed again.
+NARRATION_WPM = 150
+
+
 class Pacer:
     def __init__(self, rehearse: bool) -> None:
-        self._scale = 0.18 if rehearse else 1.0
+        self._scale = 0.18 if rehearse else PRESENTATION_PACE
+        self.planned = 0.0  # seconds of pause a real take would spend
 
     def beat(self, seconds: float) -> None:
+        self.planned += seconds * PRESENTATION_PACE
         time.sleep(seconds * self._scale)
 
 
@@ -356,6 +371,7 @@ def main() -> int:
     configure(level="WARNING")
     pace = Pacer(args.rehearse)
 
+    started = time.monotonic()
     console.print("[dim]preflight ...[/]")
     problems = preflight()
     if problems:
@@ -377,8 +393,67 @@ def main() -> int:
         restore_status_tag()
 
     if VERIFY:
+        # Commands run at full speed in a rehearsal; only the pauses are shortened. So the wall time
+        # minus the shortened pauses is a real measurement of the command cost in a live take.
+        commands = max(0.0, (time.monotonic() - started) - pace.planned * 0.18 / PRESENTATION_PACE)
+        _report_timing(pace, commands)
         return _rehearsal_verdict()
     return 0
+
+
+def _narration_seconds() -> float | None:
+    """How long demo/VIDEO.md's main-take narration takes to read aloud.
+
+    Only the quoted lines between "## The words" and "## How to say it" are spoken; everything else
+    is stage direction. Returns None if the file has been restructured, so a doc edit degrades to
+    "cannot check" rather than a wrong number.
+    """
+    import re
+
+    path = REPO / "demo" / "VIDEO.md"
+    if not path.exists():
+        return None
+    lines = path.read_text(encoding="utf-8").splitlines()
+    try:
+        start = next(i for i, line in enumerate(lines) if line.startswith("## The words"))
+        end = next(i for i, line in enumerate(lines) if line.startswith("## How to say it"))
+    except StopIteration:
+        return None
+    spoken = " ".join(
+        line.lstrip("> ").strip() for line in lines[start:end] if line.startswith(">")
+    )
+    words = [w for w in re.split(r"\s+", re.sub(r"[*_`]", "", spoken)) if w.strip()]
+    return len(words) / NARRATION_WPM * 60
+
+
+def _report_timing(pace: Pacer, commands: float) -> None:
+    """Compare the take the screen will produce against the script that gets read over it.
+
+    These drift independently: pauses live here, words live in VIDEO.md. When they diverge you find
+    out mid-recording, by running out of screen before you run out of script - which costs a take
+    and is invisible to every other check.
+    """
+    take = pace.planned + commands
+    narration = _narration_seconds()
+    console.print()
+    console.print(
+        f"[bold]projected take[/] [dim]{take:.0f}s "
+        f"({pace.planned:.0f}s of pauses + {commands:.0f}s of commands)[/]"
+    )
+    if narration is None:
+        console.print("[yellow]could not read the narration from demo/VIDEO.md to compare.[/]")
+        return
+    console.print(f"[bold]narration[/] [dim]{narration:.0f}s at {NARRATION_WPM} wpm[/]")
+    if take > 180 or narration > 180:
+        console.print("[bold red]over the 3:00 hard limit - cut a beat or trim the script.[/]")
+    elif abs(take - narration) > 20:
+        longer, shorter = ("script", "screen") if narration > take else ("screen", "script")
+        console.print(
+            f"[yellow]the {longer} runs {abs(take - narration):.0f}s longer than the {shorter}.[/] "
+            "[dim]Adjust PRESENTATION_PACE here, or the wording in VIDEO.md, so they match.[/]"
+        )
+    else:
+        console.print("[green]screen and script are within 20s of each other.[/]")
 
 
 def _rehearsal_verdict() -> int:

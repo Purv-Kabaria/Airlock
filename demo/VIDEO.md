@@ -53,7 +53,9 @@ they're convinced by watching a tag change in DataHub and the answer change beca
 | 2:03 | Three more things | Redirect, inherited, self-correction | It does more than hide columns |
 | 2:36 | Close | Blind-spot report | Honest about limits; all of it was live |
 
-Roughly 420 spoken words at ~150 wpm. Count them after any edit — do not eyeball it.
+430 spoken words at ~150 wpm, so about 2:52. `python demo/record.py --rehearse` prints this
+number next to the projected length of the screen recording and warns if they drift apart, so after
+any edit to the words or the pauses, run it rather than eyeballing it.
 
 ---
 
