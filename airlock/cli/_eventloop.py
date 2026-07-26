@@ -19,13 +19,23 @@ import sys
 _NEEDS_SELECTOR_LOOP = frozenset({"postgres"})
 
 
+def _is_windows() -> bool:
+    """Kept behind a call so mypy cannot fold the comparison.
+
+    Checking `sys.platform` inline lets mypy narrow it per platform, which makes the body below
+    provably unreachable on the Linux and macOS legs of the CI matrix and fails --strict there,
+    while passing locally on Windows. The indirection keeps one implementation honest on all three.
+    """
+    return sys.platform == "win32"
+
+
 def select_event_loop_for(kind: str) -> None:
     """Set the process event-loop policy for `kind`. No-op off Windows; safe to call repeatedly.
 
     Must run before the first loop is created - a policy set after `asyncio.run` has started has no
     effect on the loop already running.
     """
-    if sys.platform != "win32" or kind not in _NEEDS_SELECTOR_LOOP:
+    if not _is_windows() or kind not in _NEEDS_SELECTOR_LOOP:
         return
     # Resolved by name: the class only exists on Windows, and a direct reference would not type-check
     # on the Linux and macOS legs of the CI matrix.
