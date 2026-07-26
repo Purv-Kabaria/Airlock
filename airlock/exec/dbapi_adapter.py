@@ -25,7 +25,7 @@ import contextlib
 from collections.abc import Callable
 from typing import Any, Literal
 
-from airlock.errors import ConfigError, WarehouseUnavailableError
+from airlock.errors import AirlockError, ConfigError, WarehouseUnavailableError
 from airlock.exec.base import QueryResult, coerce_value
 from airlock.logging import get_logger
 
@@ -200,10 +200,17 @@ class DbapiAdapter:
                 if self._free:
                     return self._free.pop()
             conn = await asyncio.to_thread(self._connect_fn)
-        except BaseException:
+        except BaseException as exc:
             # A failed connect must not leak the permit, or repeated failures during an outage
             # exhaust the pool and every later acquire blocks forever. Release before propagating.
             self._sem.release()
+            # A driver raises its own exception type here (sqlite3.OperationalError, and whatever
+            # an arbitrary PEP 249 driver chooses). Letting that escape puts a raw traceback in
+            # front of whoever ran `doctor`, `verify`, or `init` - the three commands most likely
+            # to meet a database that is not there yet. Convert it to the typed error every other
+            # warehouse failure uses, keeping the original on the chain for the log.
+            if isinstance(exc, Exception) and not isinstance(exc, AirlockError):
+                raise WarehouseUnavailableError(self.kind, str(exc).splitlines()[0]) from exc
             raise
         async with self._lock:
             self._all.append(conn)

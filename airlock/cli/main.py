@@ -150,6 +150,9 @@ def init(
     kind: str | None = typer.Option(
         None, "--kind", help=f"Warehouse: {' | '.join(_WAREHOUSE_HELP)}. Prompted if omitted."
     ),
+    local: bool = typer.Option(
+        False, "--local", help="No DataHub: use a reviewed local catalog file instead."
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Accept defaults without prompting."),
 ) -> None:
     """Write an airlock.yaml for your warehouse, then check both connections."""
@@ -171,9 +174,9 @@ def init(
 
     default_dsn, shape, extra = _WAREHOUSE_HELP[kind]
     datahub_url = (
-        "http://localhost:8080"
-        if yes
-        else typer.prompt("DataHub GMS URL", default="http://localhost:8080")
+        ""
+        if local
+        else ("http://localhost:8080" if yes else typer.prompt("DataHub GMS URL", default="http://localhost:8080"))
     )
     dsn = default_dsn if yes else typer.prompt(f"Warehouse DSN - {shape}", default=default_dsn)
     driver = dialect = None
@@ -181,16 +184,111 @@ def init(
         driver = "pymysql" if yes else typer.prompt("Driver module (pymysql, pyodbc, trino.dbapi)")
         dialect = "mysql" if yes else typer.prompt("sqlglot dialect (mysql, trino, clickhouse)")
 
+    catalog_path = path.parent / "catalog.yaml"
+    source = (
+        f"catalog: {{ file: ./{catalog_path.name} }}"
+        if local
+        else _DATAHUB_BLOCK.format(url=datahub_url)
+    )
     path.write_text(
         _DEFAULT_CONFIG.format(
-            url=datahub_url, warehouse=_warehouse_block(kind, dsn, driver, dialect)
+            source=source, warehouse=_warehouse_block(kind, dsn, driver, dialect)
         ),
         encoding="utf-8",
     )
     console.print(f"[green]Wrote {path}[/] (secrets stay as ${{...}} env refs, never on disk).")
-    _probe_datahub(datahub_url)
+    if local:
+        _scaffold_catalog(catalog_path, kind, dsn, driver, dialect)
+    else:
+        _probe_datahub(datahub_url)
     _probe_warehouse(kind, dsn, driver, dialect, extra)
     console.print("Set env vars for any ${...} refs, then run `airlock doctor` for full checks.")
+
+
+def _scaffold_catalog(
+    path: Path, kind: str, dsn: str, driver: str | None, dialect: str | None
+) -> None:
+    """Draft a catalog file from the warehouse's own schema.
+
+    Every classification is written **commented out**. Airlock enforces what a human declared and
+    never guesses (README, ADR 001), so a column name that merely looks sensitive produces a
+    suggestion to confirm, not a rule that silently fires - or, worse, silently does not.
+    """
+    # The same heuristic `airlock coverage` uses, so a suggestion here and a reported
+    # blind spot there can never disagree about what looks sensitive.
+    from airlock.policy.coverage import _suspect
+
+    resolved = _env_value(dsn)
+    tables: list[tuple[str, list[tuple[str, str]]]] = []
+    if resolved is not None:
+        tables = _read_schema(kind, resolved, driver, dialect)
+
+    lines = [
+        "# Airlock catalog - the source of truth for what is sensitive.",
+        "# Drafted from your warehouse schema. Suggestions are commented out on purpose:",
+        "# uncomment the ones that are right, and Airlock enforces exactly those. It never guesses.",
+        "datasets:",
+    ]
+    if not tables:
+        lines += [
+            "  # Could not read the schema, so this is a template. One entry per table:",
+            "  # - name: users",
+            "  #   columns:",
+            "  #     - { name: id }",
+            "  #     - { name: email, tags: [PII] }",
+            "  #     - { name: ssn, terms: [Classification.SSN] }",
+        ]
+    for table, columns in tables:
+        lines.append(f"  - name: {table}")
+        lines.append("    columns:")
+        for column, _dtype in columns:
+            hint = _suspect(column)
+            if hint:
+                lines.append(f"      # looks like {hint} - uncomment to protect it:")
+                lines.append(f"      # - {{ name: {column}, tags: [PII] }}")
+                lines.append(f"      - {{ name: {column} }}")
+            else:
+                lines.append(f"      - {{ name: {column} }}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    suggested = sum(1 for _, cols in tables for c, _ in cols if _suspect(c))
+    console.print(f"  [green]ok[/]   drafted {path} from {len(tables)} table(s)")
+    if suggested:
+        console.print(
+            f"  [yellow]next[/] {suggested} column(s) look sensitive and are commented out in "
+            f"{path.name}. Review them, uncomment what is right, then `airlock verify`."
+        )
+
+
+def _read_schema(
+    kind: str, dsn: str, driver: str | None, dialect: str | None
+) -> list[tuple[str, list[tuple[str, str]]]]:
+    """Table and column names from the warehouse, via the same adapter `serve` uses."""
+    from airlock.config import WarehouseConfig
+    from airlock.errors import AirlockError
+    from airlock.exec.base import make_adapter
+
+    out: list[tuple[str, list[tuple[str, str]]]] = []
+
+    async def read() -> None:
+        adapter = make_adapter(
+            WarehouseConfig.model_validate(
+                {"kind": kind, "dsn": dsn, "driver": driver, "dialect": dialect}
+            ),
+            pool_size=1,
+        )
+        try:
+            for table in await adapter.list_tables():
+                out.append((table, await adapter.describe_table(table)))
+        finally:
+            await adapter.close()
+
+    select_event_loop_for(kind)
+    try:
+        asyncio.run(read())
+    except (AirlockError, ModuleNotFoundError, OSError, ValueError) as exc:
+        console.print(f"  [yellow]warn[/] could not read the schema ({exc}); wrote a template")
+    return out
 
 
 def _warehouse_block(kind: str, dsn: str, driver: str | None, dialect: str | None) -> str:
@@ -747,15 +845,19 @@ def _find_record(path: Path, request_id: str) -> dict[str, Any] | None:
     return found
 
 
-_DEFAULT_CONFIG = """\
-# airlock.yaml - checked into Git; secrets via env refs only
+_DATAHUB_BLOCK = """\
 datahub:
   url: {url}
   token: ${{DATAHUB_GMS_TOKEN}}
   snapshot:
     refresh_interval: 30s
     max_staleness: 24h
-    stale_policy: fail_closed
+    stale_policy: fail_closed"""
+
+
+_DEFAULT_CONFIG = """\
+# airlock.yaml - checked into Git; secrets via env refs only
+{source}
 
 warehouse:
 {warehouse}
