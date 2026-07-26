@@ -568,45 +568,56 @@ How the gated numbers happen:
 
 ## Prior art, and what is actually new here
 
-Column masking driven by data classification is not a new idea. Immuta, Satori, and Privacera build
-businesses on it, and Snowflake and Databricks ship native masking policies. Airlock is not claiming
-to have invented dynamic masking. Three things are different:
+Dynamic masking driven by data classification is a mature, shipped category. Airlock did not invent
+it, and the honest way to describe what is new is to say exactly which cell of the matrix was empty.
 
-**Policy compiles from the catalog you already run.** The commercial tools maintain their own
-metadata plane and expect you to classify data inside it, which means a second source of truth to
-keep in sync with your catalog. Airlock has no metadata store: tags, glossary terms, lifecycle,
-domains, schemas, and lineage are read from DataHub, and the compiled snapshot is content-addressed
-so every decision names the exact catalog version that produced it. Retag a column in the DataHub
-UI and enforcement changes on the next refresh — there is nothing else to update.
+Two things have to be true at once for Airlock's approach to work: policy comes from **the catalog you
+already run**, and enforcement happens by **rewriting the query in flight**. Every mature product does
+one or the other.
 
-**Nothing is installed in the warehouse.** Native masking policies are DDL: per-warehouse, per-
-dialect, applied by someone with elevated rights, and invisible from outside the database. Airlock
-rewrites the query in flight, so one policy covers every warehouse identically and leaves no
-footprint to drift or migrate. Because the rewrite is the enforcement, adding a warehouse is a
-connection, not a policy port: DuckDB, Postgres, Snowflake, and BigQuery have dedicated adapters,
-and `kind: dbapi` drives any [PEP 249](https://peps.python.org/pep-0249/) driver — MySQL, Trino,
-ClickHouse, Redshift, ODBC, and the rest — by naming the module and the sqlglot dialect. The mask
-SQL is generated per dialect, verified across nine of them, so the same rule renders `TO_HEX(MD5())`
-on BigQuery and `SUBSTRING(... FOR 1)` on Postgres without a line of adapter-specific policy. SQLite
-ships with Python and needs no dependency, which makes it the zero-install warehouse for a laptop, a
-CI box, or an ARM device — and the backend these adapters are tested against end to end.
+| | Rewrites the agent's SQL | Policy from your catalog | Agent-readable denial |
+|---|---|---|---|
+| **Immuta** | No — compiles policy into native warehouse objects (Snowflake masking policies, Unity Catalog column masks). Plan rewrite on Databricks Spark only | **Yes** — ingests tags from Alation, Collibra, Atlan, Purview | No |
+| **Cyral** (acquired by Varonis, 2025) | **Yes** — sidecar proxy rewrites the statement | No — its own discovery and labels | No |
+| **Satori** | **Yes** — proxy rewrites before the query reaches the store | No — its own classification inventory | No |
+| **Snowflake tag-based masking / Databricks UC ABAC / BigQuery policy tags** | No — enforced natively inside that one warehouse | Only that warehouse's own tags | No (BigQuery names blocked columns in prose) |
+| **MCP gateways** (21+ open-source projects, 2026) | **No** — none parse SQL | No — none read a data catalog | Tool-level allow/deny only |
+| **Airlock** | Yes, sqlglot AST | Yes, DataHub | Yes, stable codes + hints |
 
-**The denial is addressed to a machine.** This is the part with no equivalent elsewhere. Existing
-tools are built for humans in BI tools: they mask silently or return an error meant to be read by a
-person. An agent handed "permission denied" retries the same query, or hallucinates around the gap.
-Airlock returns a structured envelope — a stable `AIRLOCK-NNN` reason code, the subject, a human
-reason, and at least one actionable hint — so the agent can reformulate on the next call instead of
-guessing. The test suite pins exactly that loop (`tests/unit/test_reformulation.py`): a refused
-query whose hint is actionable, then the reformulation a reader of that hint would send, executing.
-And because Airlock speaks MCP rather than any one vendor's API, the agent can be anything that does:
-[`demo/agent_reformulation.py`](demo/agent_reformulation.py) drives the live loop with a real model
-on Anthropic or any OpenAI-compatible endpoint (OpenAI, Together, Groq, a local Ollama or vLLM) —
-same gateway, same envelope, your choice of model.
+**Nothing installed in the warehouse.** Immuta's model needs the warehouse itself to be able to
+express the policy, which is why its richest features are Snowflake-only or need a recent Databricks
+runtime, and why it needs privileges to create policy objects in your database. Airlock rewrites at
+the gateway, so it needs no DDL, no warehouse policy engine, and no elevated rights. That is why the
+same rule covers DuckDB and SQLite as well as Snowflake: one masking layer, rendered per dialect.
 
-Where those tools are ahead: row-level security, mature policy authoring UIs, many more warehouse
+**The catalog is the policy, with no second metadata plane.** The proxies that do rewrite SQL
+(Cyral, Satori) classify data themselves, which is a second source of truth to keep in sync with the
+catalog your governance team already maintains. DataHub's own policies govern who may edit *metadata*,
+not who may read data, and its MCP server is read-only discovery — so turning DataHub metadata into
+runtime enforcement is not something that existed.
+
+**The denial is addressed to a machine.** This is the part with no equivalent anywhere. Every system
+above either fails silently (you get a masked value and no explanation) or returns prose for a human.
+BigQuery comes closest by naming inaccessible columns in an error string. None emit stable, per-subject,
+structured codes with hints an agent can branch on — and none of the open-source MCP gateways do
+either, because none of them understand the query well enough to say what was wrong with it.
+
+**What is not new, stated plainly.** SQL parsing and rewriting for masking is solved and shipped.
+Tag-driven masking is commodity. A proxy between a client and a database is a named pattern. MCP
+gateways with auth, policy, and audit are a crowded 2026 category. Masking strategies, audit logs, and
+fail-closed defaults are table stakes. Airlock's contribution is the combination and the interface,
+not any single component.
+
+**The strongest argument against us:** Immuta already ingests external catalog tags, authors policy
+against classifications rather than physical columns, and masks at query time. That is most of the
+value proposition, in production, from before MCP existed — and Immuta could add an MCP front door in
+a sprint. If you discount both the DataHub tie and the agent-readable envelope, Airlock reads as a
+well-executed re-implementation on a cheaper enforcement mechanism. The rebuttal is narrow but real:
+no DDL, no warehouse policy engine, no second metadata plane, and a denial an agent can act on.
+
+Where those tools are genuinely ahead: row-level security, mature policy-authoring UIs, many more
 connectors, and years of production mileage. If you need row-level policy today, use one of them —
-Airlock's granularity is table, column, and statement (see [`docs/rls.md`](docs/rls.md) for the
-design).
+Airlock's granularity is table, column, and statement (see [`docs/rls.md`](docs/rls.md) for the design).
 
 ## Security model & honest limitations
 
