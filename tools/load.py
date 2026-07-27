@@ -49,6 +49,8 @@ async def main() -> int:
     finally:
         await gateway.aclose()
 
+    _report_memory()
+
     if failures:
         print("\nLOAD FAILED:")
         for f in failures:
@@ -56,6 +58,22 @@ async def main() -> int:
         return 1
     print("\nLOAD PASSED: sustained load clean, burst rejected cleanly, zero crashes")
     return 0
+
+
+# The README quotes a steady-state memory figure. Measuring it here, right after the heaviest thing
+# the gateway ever does, is what keeps that number honest -- an unmeasured budget is a guess with a
+# unit attached. Reported rather than gated: RSS varies with allocator and platform, so failing a
+# build on it would be noise, while a number nobody prints is a claim nobody checks.
+def _report_memory() -> None:
+    try:
+        import os
+
+        import psutil
+    except ImportError:
+        print("memory: psutil not installed; skipping (pip install psutil)")
+        return
+    rss = psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+    print(f"memory: {rss:.0f} MB resident after sustained load and burst (README budget: 300 MB)")
 
 
 async def _sustained(gateway: Gateway) -> list[str]:
