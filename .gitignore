@@ -52,3 +52,7 @@ Thumbs.db
 .agents/
 .claude/
 skills-lock.json
+
+# Generated on demand by demo/agent_reformulation.py against whatever model you point it at.
+# Not committed: its content depends on the model, and a weak run is not evidence of the loop.
+examples/agent_reformulation.md
