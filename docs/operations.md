@@ -6,8 +6,10 @@ Airlock *is* and how to stand up the demo, read `README.md` first; this document
 repeat the architecture, the security model, or the performance budgets, only extends them
 for operators.
 
-Airlock fails closed and requires a live DataHub to start. Internalize both before you page
-yourself over an outage: a gateway that will not serve is usually a gateway doing its job.
+Airlock fails closed, and it will not start without a catalog to compile policy from. That is
+normally a live DataHub; a reviewed local file (`catalog:`) is the alternative for deployments
+that have none. Internalize that before you page yourself over an outage: a gateway that will
+not serve is usually a gateway doing its job.
 
 ## 1. Deployment topologies
 
@@ -66,7 +68,9 @@ default.
 
 | Key | Type | Default | Effect |
 |---|---|---|---|
-| `datahub.url` | str | — (required) | GMS base URL. |
+| `datahub` | block | — | The catalog source. Required unless `catalog` is set; exactly one of the two. |
+| `catalog.file` | str | — | Path to a reviewed local catalog file, *instead of* `datahub`. Gives up lineage, ownership, propagation, and write-back; see docs/adr/001-local-catalog.md. |
+| `datahub.url` | str | — (required with `datahub`) | GMS base URL. |
 | `datahub.token` | str \| null | `null` | Bearer token for GMS. Use an env ref. |
 | `datahub.domains` | list | `[]` | Compile only these DataHub domains (names or urns). Empty compiles every dataset on the platform. Applied server-side in the search query, so filtered datasets are never fetched. A name that matches no domain refuses to compile rather than silently producing an empty deny-everything policy. |
 | `datahub.snapshot.refresh_interval` | duration | `300s` | Background recompile cadence. |
@@ -150,6 +154,22 @@ every non-demo deployment. When it is unset, Airlock derives a salt from the sna
 `airlock doctor` warns — a warning, deliberately, so the demo runs, but treat it as a blocker
 for production.
 
+## 3b. Before you route traffic: prove enforcement works here
+
+`airlock doctor` answers "can I reach everything". It does not answer "does masking actually run on
+this warehouse", which is the question that matters before an agent is pointed at production.
+
+```bash
+airlock verify -c airlock.yaml          # human-readable
+airlock verify -c airlock.yaml --json   # CI gate; exits non-zero if any strategy fails
+```
+
+It renders every masking strategy into your warehouse's own dialect, executes it, and checks the
+result. Read-only and schema-free: each probe masks a literal inside a scalar subquery, so it reads
+no table, creates nothing, and needs no permission beyond running a `SELECT`. Safe to point at
+production. Run it after any warehouse, driver, or dialect change — that is how the SQLite gaps in
+docs/warehouses.md were found.
+
 ## 4. Health and readiness for orchestrators
 
 Two endpoints, two questions.
@@ -182,6 +202,11 @@ only concerns the best-effort DataHub/OTel backlog. Give the container a stop gr
 at least the drain deadline so write-back is not truncated.
 
 ## 5. Monitoring
+
+Interactive commands are quiet by default: they print their result and nothing else. Add `-v` /
+`--verbose` to any command to see info-level structured logs on stderr (snapshot compiles, decisions,
+refresh failures). `serve` logs at info without the flag, because a long-running server should.
+
 
 Three surfaces, in increasing distance from the request:
 

@@ -11,7 +11,7 @@ decision is a pure function and everything impure lives at the edges.
 
 | Role (XACML) | What it is here | Where |
 |---|---|---|
-| Policy information point | DataHub — tags, terms, lifecycle, lineage, schemas | read by `policy/compile.py` |
+| Policy information point | DataHub — tags, terms, lifecycle, lineage, schemas. Or a reviewed local file when there is no DataHub | `policy/compile.py`, `policy/file_catalog.py` |
 | Policy definition | Rules over classifications, in `airlock.yaml` | `policy/rules.py` |
 | Decision point (PDP) | `decide(resolved, principal, graph) -> list[Verdict]` | `engine/decide.py` |
 | Enforcement point (PEP) | AST rewrite + warehouse execution | `analyzer/rewrite.py`, `exec/` |
@@ -23,9 +23,11 @@ snapshot_hash)`. That purity is also what makes the decision cache in the gatewa
 hash — see `_hash_graph` in `policy/graph.py:292`, which must cover every field that changes a
 decision (guarded by `tests/unit/test_snapshot_hash.py`).
 
-Snapshot flow: `compile_snapshot` (`policy/compile.py:125`) reads DataHub over GraphQL and calls
-`PolicyGraph.build`, combining catalog facts with rules/enforcement/principals from config into a
-frozen `PolicyGraph`. `SnapshotStore.install` (`policy/store.py:49`) swaps it into an atomic
+Snapshot flow: `compile_snapshot` (`policy/compile.py`) is the single entry point. It dispatches on
+the configured source — DataHub over GraphQL, or the local file in `policy/file_catalog.py` — and
+calls `PolicyGraph.build`, combining catalog facts with rules/enforcement/principals from config into
+a frozen `PolicyGraph`. Keeping the dispatch there is what lets "the only module that reads DataHub"
+stay true of `compile.py`. `SnapshotStore.install` (`policy/store.py:49`) swaps it into an atomic
 reference and persists the catalog facts to SQLite. Reads take `store.current` with a plain
 attribute read — no lock, so concurrent decisions never contend. `refresh_loop` recompiles in the
 background; a query never waits on DataHub.
@@ -61,7 +63,8 @@ Layout is fixed by README §"Module layout". The invariants that matter:
 
 | Module | Owns | Interface out |
 |---|---|---|
-| `policy/compile.py` | **the only** DataHub reader | `compile_snapshot(config) -> PolicyGraph` |
+| `policy/compile.py` | **the only** DataHub reader; the single entry point for building a snapshot | `compile_snapshot(config) -> PolicyGraph` |
+| `policy/file_catalog.py` | the local-file catalog source, for deployments with no DataHub | `compile_from_file`, `load_catalog_file` |
 | `policy/graph.py` | the frozen snapshot + rule resolution | `governing_rule`, `dataset_by_name`, `certified_substitutes` |
 | `policy/rules.py` | rule model + precedence matcher | `column_rule`, `winning_action`, `rule_applies` |
 | `policy/store.py` | atomic swap + SQLite persistence | `current`, `install`, `persisted_catalog` |
