@@ -273,6 +273,7 @@ This is the difference between a gateway built for people and one built for agen
 - **Policy-as-code**: `airlock.yaml` lives in Git and goes through code review like anything else. `airlock policy lint` validates before deploy; `airlock policy diff` shows what a change would alter.
 - **Principals & identities**: per-agent keys mapped to named principals with scopes; unknown principals get the deny-by-default anonymous policy. Where the identity comes from follows the transport, because the two differ in how many agents one process serves. Over **stdio** the client launches the gateway, so one process serves one agent and `--principal` fixes it at startup. Over **http** one process serves many clients at once, so every call authenticates itself with an `X-Airlock-Key` header and is scoped on its own; a missing or unrecognized key is the anonymous deny-all principal, never the process's startup identity. `--principal` is refused with `--transport http` rather than silently handing every agent that connects the same scope.
 - **Dry-run everything**: `airlock check <sql> --as <principal>` shows the full decision without executing; `enforce: monitor` logs verdicts without applying them, for safe rollout.
+- **Warehouse conformance check**: `airlock verify` renders every masking strategy into your warehouse's own dialect, executes it, and checks the result against both the post-flight shape check and the exact expected value. Read-only and schema-free — each probe masks a literal inside a subquery, so it reads no table and creates nothing, which makes it safe to point at production and useful as a CI gate with `--json`. This is how the SQLite gaps below were found.
 - **Coverage reporting**: `airlock coverage` reports what the policy can actually enforce and where the catalog leaves it blind: governed vs merely classified columns, rules that match nothing, deprecated tables with no certified substitute, datasets no principal can reach, and columns whose names read as sensitive while carrying no classification any rule acts on. `--fail-under` and `--strict` make governance posture a CI gate.
 - **Classification proposals**: `airlock propose` writes those suspected-sensitive columns back to DataHub as a structured property on each dataset, so a steward sees the gateway's finding in the catalog and can tag it. The gateway improves the graph it enforces from — the write-back loop DataHub asks for, aimed at closing its own blind spots. Idempotent, and `--dry-run` shows the list without writing.
 
@@ -391,7 +392,8 @@ airlock/
 ├── exec/           # warehouse adapters (duckdb, postgres, snowflake, bigquery, sqlite, any DB-API driver) + pooling, timeouts
 ├── audit/          # JSONL sink, OTel sink, DataHub write-back sink
 ├── masking/        # strategy registry (entry-point extensible)
-└── cli/            # init, serve, check, coverage, tail, explain, policy, doctor
+└── cli/            # init, doctor, verify, mcp-config, check, coverage, policy,
+                    #   propose, refresh, serve, tail, explain, usage, version
 ```
 
 Two places where the catalog earns its keep:
