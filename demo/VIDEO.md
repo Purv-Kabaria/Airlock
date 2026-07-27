@@ -206,9 +206,14 @@ surprise you mid-take.
 > for, and rewrites its own question. Nobody told it the rule — the system did, in words a program
 > can act on.
 
-**Record the fallback first.** Run `python demo/agent_reformulation.py --capture` once against the
-live stack; it writes the real transcript to `examples/agent_reformulation.md`. If the live call
-misbehaves while you're recording, show that instead. Either way it's a real run.
+**Use a model that can hold a multi-step tool workflow.** Anything from about 7B upward, or any
+hosted model. Smaller ones guess column names instead of calling `warehouse_describe_table` first,
+which produces a real run of an agent flailing — true, and useless on camera.
+
+**The fallback already exists and is committed:** [`examples/agent_session.md`](../examples/agent_session.md)
+is the same loop captured turn by turn over MCP — refused for filtering on SSN, reads each column's
+policy off the describe card, recovers into a query that answers the real question. If the live call
+misbehaves mid-take, put that on screen instead. Both are real runs; that one cannot fail on camera.
 
 ## Before you record
 
