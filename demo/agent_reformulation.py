@@ -55,6 +55,15 @@ SYSTEM = """You are a data analyst agent with access to a governed SQL warehouse
 tools. You have no direct database credential; every query goes through the gateway, which may \
 mask columns, deny columns, redirect deprecated tables, or block a statement outright.
 
+Work in this order, every time:
+1. Call warehouse_list_tables to see which tables you may read.
+2. Call warehouse_describe_table on the ones you need. It returns each column with the policy that \
+would fire on it - allow, mask, or deny - so you can choose usable columns before you query.
+3. Only then call warehouse_run_query, selecting columns that exist on that table.
+
+Never guess a column name. If a column is not in the describe output, it does not exist and \
+querying it wastes a turn.
+
 Every tool result is a JSON envelope with a `verdicts` list. When a column is masked or denied, or \
 a statement is blocked, read the verdict's `reason` and `hint` and reformulate your next query to \
 get the user something useful within what policy allows. Do not repeat a denied query unchanged, \
@@ -339,6 +348,24 @@ class Transcript:
         self._console.print(body)
         self._md.append(f"{body}\n")
 
+    def _catalog_result(self, result: dict[str, Any]) -> None:
+        """Render what the discovery tools answered, rather than a missing status."""
+        if "tables" in result:
+            tables = ", ".join(result["tables"]) or "(none in scope)"
+            self._console.print(f"[dim]tables:[/] {tables}")
+            self._md.append(f"tables in scope: `{tables}`\n")
+            return
+        table = result.get("table", "?")
+        self._console.print(f"[dim]{table}:[/] {result.get('note', '')}")
+        self._md.append(f"**{table}** - {result.get('note', '')}\n")
+        for column in result.get("columns", []):
+            policy = column.get("policy", "?")
+            note = f" - {column['note']}" if column.get("note") else ""
+            line = f"- `{column.get('name')}` ({column.get('type')}): **{policy}**{note}"
+            self._console.print(f"  {column.get('name')}: {policy}{note}")
+            self._md.append(line)
+        self._md.append("")
+
     def sql(self, query: str) -> None:
         from rich.syntax import Syntax
 
@@ -346,7 +373,14 @@ class Transcript:
         self._md.append(f"```sql\n{query}\n```\n")
 
     def envelope(self, envelope: dict[str, Any]) -> None:
-        status = envelope.get("status", "?")
+        # Only run_query returns a status-bearing envelope. list_tables and describe_table return
+        # their own shapes, and printing "status: ?" for them hid the most interesting thing in the
+        # transcript: the describe card is where the agent learns the policy *before* querying,
+        # which is the whole reason that tool exists.
+        if "status" not in envelope:
+            self._catalog_result(envelope)
+            return
+        status = envelope["status"]
         self._console.print(f"[dim]status:[/] {status}")
         self._md.append(f"`status: {status}`\n")
         for verdict in envelope.get("verdicts", []):

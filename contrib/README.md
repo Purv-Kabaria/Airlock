@@ -16,14 +16,15 @@ Run it against a DataHub instance with the Actions framework installed:
 datahub actions -c contrib/datahub_action/action.yaml
 ```
 
-We intend to propose this as a reusable Action upstream.
+Written as a reusable Action for upstream, and published here under Apache 2.0. It has not been
+filed as a pull request.
 
 ## `datahub_audit_skill/` — the missing `datahub-audit` skill
 
 A skill for [`datahub-project/datahub-skills`](https://github.com/datahub-project/datahub-skills).
-The registry routes users to `/datahub-audit` from seven places across five files — including the
-"Not This Skill" boundary in `datahub-search` and the canonical `-C skill=datahub-audit` example in
-the shared CLI reference — but the skill was never written. This is it.
+The registry already routes users to `/datahub-audit` from several places — including the
+"Not This Skill" boundary in `datahub-search` and a `-C skill=datahub-audit` example in the shared
+CLI reference — but the skill itself was never written. This is it.
 
 It reports catalog coverage (ownership, documentation, classification, domains, lineage,
 deprecation hygiene) and the unclassified columns whose names suggest they need review. Read-only;
