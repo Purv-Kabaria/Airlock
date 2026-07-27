@@ -550,14 +550,14 @@ Validated on startup and by `airlock policy lint`; misconfiguration produces a n
 
 ## Performance & concurrency
 
-Two of these are hard CI gates: a regression fails the build. `make bench` measures decision overhead against the corpus and exits non-zero over budget (the numbers ship in [`docs/benchmarks.md`](docs/benchmarks.md), regenerated each run); `make load` drives 50 sustained principals and a 200-burst and fails on any error or a dirty rejection. The rest are design targets the architecture is built for but CI does not yet assert — labelled as such rather than dressed up as gates.
+Three of these are hard CI gates: a regression fails the build. `make bench` measures both decision overhead and repeat-query (cache-hit) latency against the corpus and exits non-zero over either budget (the numbers ship in [`docs/benchmarks.md`](docs/benchmarks.md), regenerated each run); `make load` drives 50 sustained principals and a 200-burst and fails on any error or a dirty rejection. The rest are design targets the architecture is built for but CI does not yet assert — labelled as such rather than dressed up as gates.
 
 | Budget | Target | CI-gated |
 |---|---|---|
 | Decision overhead (parse + resolve + decide + rewrite), p95 | **< 10 ms** on the benchmark corpus | yes — `make bench` |
 | Sustained concurrency | **50 agents**, zero errors | yes — `make load` |
 | Burst | **200 at once**: bounded queue, zero drops below the cap, clean `AIRLOCK-440` above it | yes — `make load` |
-| Repeated query (decision cache hit), p95 | **< 1 ms** | design target |
+| Repeated query (decision cache hit), p95 | **< 1 ms** | yes — `make bench` (measured 0.004 ms) |
 | Cold start → `/readyz` (snapshot already cached) | **< 5 s** | design target |
 | Steady-state memory | **< 300 MB** with the demo catalog loaded | measured — `make load` prints it (99 MB on the demo catalog after 300 sustained + 400 burst requests) |
 
