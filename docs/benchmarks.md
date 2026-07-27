@@ -4,15 +4,15 @@ Decision overhead (parse + resolve + decide + rewrite) on the benchmark corpus, 
 
 | metric | value |
 |---|---|
-| p50 | 2.033 ms |
-| p95 | 2.872 ms |
-| p99 | 4.278 ms |
-| mean | 1.965 ms |
+| p50 | 2.213 ms |
+| p95 | 3.177 ms |
+| p99 | 4.305 ms |
+| mean | 2.179 ms |
 | budget (p95) | 10.0 ms |
 
 Repeat query served from the decision cache, keyed on `(sql, principal, snapshot_hash)`. A policy change moves the hash, so a stale entry is unreachable rather than merely expired.
 
 | metric | value |
 |---|---|
-| cache hit p95 | 0.004 ms |
+| cache hit p95 | 0.006 ms |
 | budget (p95) | 1.0 ms |

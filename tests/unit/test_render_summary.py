@@ -67,3 +67,20 @@ def test_monitor_mode_never_claims_a_column_was_changed() -> None:
     assert "nothing was changed" in got.lower()
     assert "unmasked" in got.lower()
     assert "masked ·" not in got and "removed" not in got
+
+
+def test_a_stale_snapshot_is_called_out_on_the_scan_line() -> None:
+    """Serving stale policy keeps the `executed` status, so nothing else flags it at a glance.
+
+    The answer reflects the catalog as it was, not as it is. That is exactly the kind of thing an
+    operator should not have to read the verdict table to discover.
+    """
+    stale = [
+        ("AIRLOCK-150", "limit", "statement:query"),
+        (str(ReasonCode.STALE_SNAPSHOT), "note", "statement:query"),
+    ]
+    got = _summarize(stale, EnvelopeStatus.EXECUTED)
+    assert got is not None and "stale" in got.lower()
+
+    fresh = [("AIRLOCK-150", "limit", "statement:query")]
+    assert "stale" not in (_summarize(fresh, EnvelopeStatus.EXECUTED) or "").lower()

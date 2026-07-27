@@ -114,7 +114,13 @@ def _summarize(verdicts: list[tuple[str, str, str]], status: EnvelopeStatus) -> 
         for act, noun, verb in _CHANGE
         if counts[act]
     ]
-    return " · ".join(parts) + "." if parts else "[dim]Nothing hidden or removed.[/]"
+    line = " · ".join(parts) + "." if parts else "[dim]Nothing hidden or removed.[/]"
+    # Serving a stale snapshot means the answer reflects the catalog as it was, not as it is. That
+    # belongs on the scan line: the status still reads `executed`, so nothing else at a glance says
+    # the gateway is running on facts it could not refresh.
+    if any(code == ReasonCode.STALE_SNAPSHOT for code, _, _ in verdicts):
+        line += " [yellow]Policy is stale — DataHub could not be reached.[/]"
+    return line
 
 
 def _render_rows(columns: list[str], rows: list[dict[str, Any]], truncated: bool) -> None:
