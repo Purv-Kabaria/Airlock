@@ -1,6 +1,6 @@
 """Self-running demo for the submission video. Screen-record this in one hands-free take.
 
-It plays the exact sequence from SCRIPT.md against the live stack `python demo/up.py` starts, in
+It plays the exact sequence from RECORDING.md against the live stack `python demo/up.py` starts, in
 the order the video tells it: the problem (the raw table, read straight from the warehouse), the
 same question through Airlock, the tag change in DataHub, write-back, three shorter capabilities,
 and the honest close - with large captions and pauses sized for a voiceover.
@@ -19,7 +19,7 @@ by those queries seconds earlier, not left over from an earlier session.
 codes the voiceover promises actually came back, so "the rehearsal looked fine" is a verified
 statement rather than an impression. Run it until it exits 0, then record.
 
-Read demo/VIDEO.md aloud over the recording, or feed it to a text-to-speech engine.
+Read demo/RECORDING.md aloud over the recording, or feed it to a text-to-speech engine.
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ AIRLOCK = _airlock_cmd()
 # both numbers so this stays honest after an edit to either side.
 PRESENTATION_PACE = 1.30
 
-# Words in demo/VIDEO.md's spoken lines, and the rate to read them at. Used to project the take
+# Words in demo/RECORDING.md's spoken lines, and the rate to read them at. Used to project the take
 # length during a rehearsal so the script and the screen cannot drift apart unnoticed again.
 NARRATION_WPM = 150
 
@@ -402,7 +402,7 @@ def main() -> int:
 
 
 def _narration_seconds() -> float | None:
-    """How long demo/VIDEO.md's main-take narration takes to read aloud.
+    """How long demo/RECORDING.md's main-take narration takes to read aloud.
 
     Only the quoted lines between "## The words" and "## How to say it" are spoken; everything else
     is stage direction. Returns None if the file has been restructured, so a doc edit degrades to
@@ -410,13 +410,13 @@ def _narration_seconds() -> float | None:
     """
     import re
 
-    path = REPO / "demo" / "VIDEO.md"
+    path = REPO / "demo" / "RECORDING.md"
     if not path.exists():
         return None
     lines = path.read_text(encoding="utf-8").splitlines()
     try:
-        start = next(i for i, line in enumerate(lines) if line.startswith("## The words"))
-        end = next(i for i, line in enumerate(lines) if line.startswith("## How to say it"))
+        start = next(i for i, line in enumerate(lines) if line.startswith("# 3. The words"))
+        end = next(i for i, line in enumerate(lines) if line.startswith("# 4. How to say it"))
     except StopIteration:
         return None
     spoken = " ".join(
@@ -429,7 +429,7 @@ def _narration_seconds() -> float | None:
 def _report_timing(pace: Pacer, commands: float) -> None:
     """Compare the take the screen will produce against the script that gets read over it.
 
-    These drift independently: pauses live here, words live in VIDEO.md. When they diverge you find
+    These drift independently: pauses live here, words live in RECORDING.md. When they diverge you find
     out mid-recording, by running out of screen before you run out of script - which costs a take
     and is invisible to every other check.
     """
@@ -441,7 +441,7 @@ def _report_timing(pace: Pacer, commands: float) -> None:
         f"({pace.planned:.0f}s of pauses + {commands:.0f}s of commands)[/]"
     )
     if narration is None:
-        console.print("[yellow]could not read the narration from demo/VIDEO.md to compare.[/]")
+        console.print("[yellow]could not read the narration from demo/RECORDING.md to compare.[/]")
         return
     console.print(f"[bold]narration[/] [dim]{narration:.0f}s at {NARRATION_WPM} wpm[/]")
     if take > 180 or narration > 180:
@@ -450,7 +450,7 @@ def _report_timing(pace: Pacer, commands: float) -> None:
         longer, shorter = ("script", "screen") if narration > take else ("screen", "script")
         console.print(
             f"[yellow]the {longer} runs {abs(take - narration):.0f}s longer than the {shorter}.[/] "
-            "[dim]Adjust PRESENTATION_PACE here, or the wording in VIDEO.md, so they match.[/]"
+            "[dim]Adjust PRESENTATION_PACE here, or the wording in RECORDING.md, so they match.[/]"
         )
     else:
         console.print("[green]screen and script are within 20s of each other.[/]")

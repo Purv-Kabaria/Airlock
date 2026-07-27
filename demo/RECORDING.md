@@ -1,10 +1,8 @@
-# The demo video
+# Recording the demo video
 
-Everything needed to record the submission video: the rules it has to meet, what appears on screen,
-and the exact words to say. [`SCRIPT.md`](SCRIPT.md) is the shot list and the rehearsal gauntlet.
-
-`python demo/record.py` plays the beats hands-free against the live stack. You screen-record one take
-and read the narration below over it. No typing on camera.
+Everything needed to record the submission video, in one file: what to set up, what is on screen,
+what to say, and the checks that stop a take being wasted. There is deliberately no second script —
+two of them drift, and then the voice claims something the screen does not show.
 
 ```
 Limit:        3:00 hard. Judges may stop watching at three minutes.
@@ -13,8 +11,6 @@ Hosting:      public YouTube, Vimeo, or Youku.
 Restrictions: no copyrighted music, no third-party trademarks.
 Target:       2:50, so a slow read still fits.
 ```
-
----
 
 ## Two rules that decide everything
 
@@ -37,29 +33,92 @@ mocked: real DataHub, real warehouse, real queries.
 | 5 | It does more than hide columns | The three fast beats |
 | 6 | These people are honest | The close |
 
-Beat 3 is the one that wins the sponsor criterion. Nobody is convinced by hearing "we use DataHub" —
-they're convinced by watching a tag change in DataHub and the answer change because of it.
+Beat 3 wins the sponsor criterion. Nobody is convinced by hearing "we use DataHub" — they are
+convinced by watching a tag change in DataHub and the answer change because of it.
 
-## Timing
+---
+
+# 1. Set up
+
+## The stack
+
+```bash
+python demo/up.py            # DataHub + DuckDB + seeded catalog. Idempotent; safe to re-run.
+make rehearse                # MUST exit 0. See "The gate" below.
+python tools/judge.py        # hostile-input gauntlet, must be green
+```
+
+`up.py` now waits until the catalog is actually queryable before printing "Ready", so the command it
+prints will work the moment you paste it. If DataHub was already running it skips the boot.
+
+## The screen
+
+Two panes, side by side, for the whole recording. Do not rearrange windows on camera.
+
+```
++---------------------------+---------------------------+
+|  LEFT: terminal           |  RIGHT: browser           |
+|  demo/record.py runs here |  DataHub UI  :9002        |
+|                           |  logged in, dataset open  |
++---------------------------+---------------------------+
+```
+
+- Terminal at **100 columns**, font **16pt minimum**, dark theme, nothing else visible.
+- Log into DataHub (`datahub` / `datahub`) **before** you start, and leave the `orders` dataset open,
+  so no login and no navigation happens on camera.
+- Watch the result back **at 720p in a small window**. That is how a judge sees it. If the text is
+  hard to read there, raise the font and shoot again.
+
+## The gate
+
+```bash
+make rehearse
+```
+
+This is not a dry run for your benefit — it is a verification. It replays every beat, re-runs each
+decision with `--json`, and asserts the reason codes the narration promises actually came back. It
+exits non-zero and names any beat that no longer holds. It also prints the projected length of the
+take beside the length of the narration, and warns if they drift more than twenty seconds apart or
+either crosses 3:00.
+
+Run it until it exits 0. Then run `python demo/record.py` and record that.
+
+---
+
+# 2. The flow
+
+`python demo/record.py` plays every beat hands-free, with captions and pauses sized for a voiceover.
+Nothing is typed on camera. You read the words below over it.
+
+Timings are where each beat lands in a take of about 2:50.
 
 | Time | Beat | On screen | What the viewer must notice |
 |---|---|---|---|
 | 0:00 | Title | One line of text | What this is |
-| 0:06 | The pain | An agent asking for customer data | The agent can see everything, including SSNs |
-| 0:26 | The fix | The same question, through Airlock | Email hidden, SSN gone, and a reason for each |
-| 0:52 | Where rules come from | DataHub, the tags on the columns | Nothing is hardcoded |
+| 0:06 | The pain | The raw table, read straight from the database | The agent can see everything, including SSNs |
+| 0:26 | The fix | The same question through Airlock | Email hidden, SSN gone, and a reason for each |
+| 0:52 | Where rules come from | **Right pane:** DataHub, the tags on the columns | Nothing is hardcoded |
 | 1:10 | **The tag change** | DataHub → refresh → same query | A tag changed; the answer changed |
-| 1:45 | Write-back | DataHub dataset page | DataHub now shows who touched the data |
+| 1:45 | Write-back | **Right pane:** the dataset's Properties tab | DataHub now shows who touched the data |
 | 2:03 | Three more things | Redirect, inherited, self-correction | It does more than hide columns |
 | 2:36 | Close | Blind-spot report | Honest about limits; all of it was live |
 
-430 spoken words at ~150 wpm, so about 2:52. `python demo/record.py --rehearse` prints this
-number next to the projected length of the screen recording and warns if they drift apart, so after
-any edit to the words or the pauses, run it rather than eyeballing it.
+**The one beat that is not a dry run.** Every beat except write-back uses `airlock check`, which
+decides without executing. The write-back beat runs two real queries through the gateway — one
+allowed, one denied — because `check` writes nothing back, and a Properties tab populated by an
+earlier session is exactly what a judge is right to distrust. Those two queries are why
+`lastAgentAccess` reads seconds old and `deniedAttempts` moves while the camera is on it.
+
+**Manual vs hands-free.** `record.py` writes the retag through the same `editableSchemaMetadata`
+aspect the DataHub UI writes, so enforcement changes identically either way. The only thing doing it
+by hand buys you is *clicking the tag in the DataHub UI on camera*, which is marginally more
+convincing because the viewer watches a human do it in a product they recognise. If you take that
+path, do it **only** for that beat and let `record.py` carry the rest — every command typed live is a
+chance to typo on camera.
 
 ---
 
-## The words
+# 3. The words
 
 Read at a steady pace. Slow down where marked. Bracketed lines are directions, not spoken.
 
@@ -70,7 +129,7 @@ Read at a steady pace. Slow down where marked. Bracketed lines are directions, n
 
 ### The pain — 0:06–0:26
 
-*[On screen: a terminal. An AI agent asks for customer records and gets everything.]*
+*[On screen: the customer table, read straight from the database with no gateway in the way.]*
 
 > Companies want to ask their database questions in plain English. An AI agent can do that — but to
 > read the data, it needs a database login.
@@ -154,7 +213,7 @@ again, now hidden.]*
 
 ---
 
-## How to say it
+# 4. How to say it
 
 - **Don't read the codes out loud.** `AIRLOCK-110` is on screen. Saying "A-I-R-L-O-C-K one one zero"
   burns four seconds and tells the viewer nothing. Say what it *means*.
@@ -169,8 +228,8 @@ again, now hidden.]*
 
 ## Things not to say
 
-Each of these is either unprovable on screen or a bigger claim than the demo supports. A judge who
-catches one stops trusting the rest.
+Each is either unprovable on screen or a bigger claim than the demo supports. A judge who catches one
+stops trusting the rest.
 
 | Don't say | Why | Say instead |
 |---|---|---|
@@ -178,18 +237,19 @@ catches one stops trusting the rest.
 | "Production ready" | Nothing on screen shows that | "Free and open source, runs on any laptop" |
 | "Impossible to bypass" | An agent holding a real database password goes around it | "Every question the agent asks goes through this" |
 | "Faster than X" | No measurement on screen | Cut it |
-| "AI-powered" | It's deliberately *not* — that's the selling point | "It decides the same way every time" |
+| "AI-powered" | It is deliberately *not* — that is the selling point | "It decides the same way every time" |
 | Anything about the roadmap | The video is for what exists today | Cut it |
 
-## The optional extra clip: the agent fixes itself
+---
+
+# 5. The optional extra clip: the agent fixes itself
 
 Keep this **out of the main take**. It calls a live language model — the one moving part that can
 hang or wander mid-recording. Record it separately and cut it in, or link it.
 
 `python demo/agent_reformulation.py` connects a real AI agent to Airlock and asks it to look up
 someone by social security number. Airlock refuses. The agent reads the refusal and asks a different
-question that works. It runs on Anthropic or any OpenAI-compatible service, so the model is your
-choice — set one of these and it picks the provider itself:
+question that works. Set one of these and it picks the provider itself:
 
 | Variable | For |
 |---|---|
@@ -198,36 +258,45 @@ choice — set one of these and it picks the provider itself:
 | `AIRLOCK_AGENT_BASE_URL` | Any OpenAI-compatible server (Together, Groq, local Ollama or vLLM) |
 | `AIRLOCK_AGENT_MODEL` | Override the default model |
 
-With none of them set it exits with a named error and changes nothing, so a missing key can't
-surprise you mid-take.
+With none set it exits with a named error and changes nothing, so a missing key cannot surprise you
+mid-take.
+
+**Use a model that can hold a multi-step tool workflow** — roughly 7B and up, or any hosted model.
+Smaller ones guess column names instead of calling `warehouse_describe_table` first, which produces a
+real run of an agent flailing: true, and useless on camera.
 
 > This is a real AI agent, connected the same way a coding assistant would be. It asks for someone
 > by social security number. Turned down. It reads the reason, understands what it's allowed to ask
 > for, and rewrites its own question. Nobody told it the rule — the system did, in words a program
 > can act on.
 
-**Use a model that can hold a multi-step tool workflow.** Anything from about 7B upward, or any
-hosted model. Smaller ones guess column names instead of calling `warehouse_describe_table` first,
-which produces a real run of an agent flailing — true, and useless on camera.
+**The fallback is already committed:** [`examples/agent_session.md`](../examples/agent_session.md) is
+the same loop captured turn by turn over MCP. If the live call misbehaves mid-take, put that on
+screen instead. Both are real runs; that one cannot fail on camera.
 
-**The fallback already exists and is committed:** [`examples/agent_session.md`](../examples/agent_session.md)
-is the same loop captured turn by turn over MCP — refused for filtering on SSN, reads each column's
-policy off the describe card, recovers into a query that answers the real question. If the live call
-misbehaves mid-take, put that on screen instead. Both are real runs; that one cannot fail on camera.
+---
 
-## Before you record
+# 6. Before you publish
 
-```bash
-python demo/up.py            # stack up
-make rehearse                # MUST exit 0 — every beat checked against the live catalog
-python tools/judge.py        # gauntlet green, no crashes
-```
+- [ ] `make rehearse` exits 0 — every beat produced the verdicts the narration claims
+- [ ] `python tools/judge.py` passes — zero tracebacks
+- [ ] `make eval` passes — including the deny-then-reformulate case
+- [ ] Every sentence points at something on screen when it is said. Watch it once with the sound off;
+      anything you cannot point to gets cut.
+- [ ] `airlock coverage` output matches what the close claims
+- [ ] The tag change worked end to end, twice in a row
+- [ ] `airlock.lastAgentAccess` on `dim_users` is from *this* session, not an earlier one
+- [ ] Under 3:00 and readable at 720p in a small window
 
-`make rehearse` is the gate. It replays every beat and checks the result the script promises actually
-came back. If it fails, the video would have claimed something that is no longer true.
+## If something breaks while you are testing
 
-Then: terminal at 100 columns, 16pt minimum, dark theme, full screen, nothing else visible. Run
-`python demo/record.py` and read the words above. Watch it back **at 720p in a small window** — that
-is how a judge sees it. If the text is hard to read there, raise the font and shoot again.
+| Do this | Expected |
+|---|---|
+| `docker stop` the DataHub container mid-session | In-flight requests unaffected (pinned snapshot); `doctor` reports it |
+| Ctrl+C the gateway mid-query, restart | Clean shutdown, no orphaned statement, restarts fine |
+| Run `python demo/up.py` a second time | Converges, never duplicates catalog entries |
+| Send the same query twice at once | One warehouse execution (coalesced), identical envelopes |
+| `python demo/reset.py` then `up.py` | Back to a clean, working stack |
+| Broker won't restart after a machine reboot | Restart Zookeeper first, then the broker — a stale registration blocks it |
 
-The tag change undoes itself, so a second take starts exactly where the first one did.
+Anything that breaks here becomes a `make judge` case in the same change as the fix.

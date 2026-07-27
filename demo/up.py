@@ -401,7 +401,7 @@ def _print_next_steps(gms: str) -> None:
         "\n  Drive it from an agent (Claude Desktop, Cursor, ...) - paste into your MCP client:\n"
     )
     print(json.dumps(config, indent=2))
-    print("\n  Full 3-minute demo path: demo/SCRIPT.md")
+    print("\n  Full 3-minute demo path: demo/RECORDING.md")
     print("=" * 70)
 
 

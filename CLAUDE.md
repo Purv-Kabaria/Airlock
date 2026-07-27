@@ -38,7 +38,7 @@ Follow the module layout in README §"Module layout (LLD)" exactly. Additional r
 - `engine/decide.py` is **pure**: no I/O, no clock, no globals. `(ResolvedQuery, Principal, PolicyGraph) -> list[Verdict]`. This purity is what makes decisions replayable and testable; guard it jealously.
 - `policy/compile.py` is the **only** module that talks to DataHub for reads. `audit/datahub_sink.py` is the only module that writes to it. Everything else consumes the `PolicyGraph` type.
 - One warehouse adapter per file in `exec/`, all implementing the same `WarehouseAdapter` protocol. No adapter-specific logic outside `exec/`.
-- `demo/` is self-contained: compose file, seed scripts, `SCRIPT.md`, agent config. Nothing in `airlock/` may import from `demo/`.
+- `demo/` is self-contained: compose file, seed scripts, `RECORDING.md`, agent config. Nothing in `airlock/` may import from `demo/`.
 
 ## 5. Nomenclature — the ubiquitous language
 
@@ -113,7 +113,7 @@ The tell of AI-generated code is not any single line — it's texture: over-comm
 - **The product never mocks.** No `--mock`, no `--demo` bypass, no fixture policy files loadable by production code, no hardcoded classifications, no canned responses. If you find yourself writing a stub "just to get the demo working," stop — wire the real thing or cut the feature from the README.
 - **DataHub is a startup requirement.** `airlock serve` must fail fast — with a named error and the exact fix — if it cannot compile a policy snapshot from a live DataHub. There is no code path that decides without the graph. Any PR that introduces one is rejected regardless of what it enables.
 - **Fakes live only under `tests/unit/`**, behind the same protocols the real implementations satisfy. Integration tests and the demo run against the real DataHub quickstart and a real DuckDB file. The demo *is* an integration test that happens to be watchable.
-- **Prove it's real in the demo:** the live-retag moment (change a tag in the DataHub UI → enforcement changes on next refresh) is scripted in `demo/SCRIPT.md` and must always work. It is the single most convincing thirty seconds we have.
+- **Prove it's real in the demo:** the live-retag moment (change a tag in the DataHub UI → enforcement changes on next refresh) is scripted in `demo/RECORDING.md` and must always work. It is the single most convincing thirty seconds we have.
 
 ## 11. Runs on any machine
 
@@ -137,7 +137,7 @@ Judges own arbitrary laptops. Cross-platform is a correctness requirement, enfor
 
 ## 13. Scope guard — what to build, in order, and what to refuse
 
-Build order (do not reorder): 1) analyzer resolve+rewrite with mask/deny on DuckDB, 2) PolicyGraph compilation from DataHub (with the fail-fast startup requirement from §10), 3) MCP layer + envelopes on the async foundation from §12, 4) substitution via lineage, 5) audit JSONL + DataHub write-back, 6) CLI (`init`, `check`, `tail`, `serve`, `doctor`) + `/healthz` `/readyz`, 7) cross-platform demo stack (`demo/up.py`, `demo/reset.py`, seed, `SCRIPT.md`) + `examples/`, 8) `make judge` gauntlet green on all three OSes, 9) monitor mode, 10) Postgres adapter, 11) OTel.
+Build order (do not reorder): 1) analyzer resolve+rewrite with mask/deny on DuckDB, 2) PolicyGraph compilation from DataHub (with the fail-fast startup requirement from §10), 3) MCP layer + envelopes on the async foundation from §12, 4) substitution via lineage, 5) audit JSONL + DataHub write-back, 6) CLI (`init`, `check`, `tail`, `serve`, `doctor`) + `/healthz` `/readyz`, 7) cross-platform demo stack (`demo/up.py`, `demo/reset.py`, seed, `RECORDING.md`) + `examples/`, 8) `make judge` gauntlet green on all three OSes, 9) monitor mode, 10) Postgres adapter, 11) OTel.
 
 Refuse, even if it seems quick: row-level security, result-set DLP scanners, a web dashboard, Snowflake before the demo works, wrap-mode for arbitrary MCP servers, any LLM call inside Airlock itself (the gateway is deterministic — that determinism is a feature we advertise; do not compromise it).
 

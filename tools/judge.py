@@ -3,7 +3,7 @@
 Replays what a judge might throw at Airlock and asserts the zero-traceback rule: every call returns
 a typed Envelope (or a clean AIRLOCK-440), never a hang or an unhandled exception. Runs against the
 real gateway over a snapshot compiled from live DataHub, so it stresses the production path. Needs
-`demo/up.py`. (Killing the DataHub container mid-run is scripted separately in demo/SCRIPT.md.)
+`demo/up.py`. (Killing the DataHub container mid-run is scripted separately in demo/RECORDING.md.)
 """
 
 from __future__ import annotations
