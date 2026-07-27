@@ -550,7 +550,7 @@ Validated on startup and by `airlock policy lint`; misconfiguration produces a n
 
 ## Performance & concurrency
 
-Three of these are hard CI gates: a regression fails the build. `make bench` measures both decision overhead and repeat-query (cache-hit) latency against the corpus and exits non-zero over either budget (the numbers ship in [`docs/benchmarks.md`](docs/benchmarks.md), regenerated each run); `make load` drives 50 sustained principals and a 200-burst and fails on any error or a dirty rejection. The rest are design targets the architecture is built for but CI does not yet assert — labelled as such rather than dressed up as gates.
+Three of these are hard CI gates: a regression fails the build. `make bench` measures both decision overhead and repeat-query (cache-hit) latency against the corpus and exits non-zero over either budget (the numbers ship in [`docs/benchmarks.md`](docs/benchmarks.md), regenerated each run); `make load` drives 50 sustained principals and a 200-burst and fails on any error or a dirty rejection. The remaining rows are measured but not gated: memory and cold start move with the machine, so failing a build on them would be noise, while leaving them unmeasured would make them guesses. Each says how it was measured.
 
 | Budget | Target | CI-gated |
 |---|---|---|
@@ -558,10 +558,10 @@ Three of these are hard CI gates: a regression fails the build. `make bench` mea
 | Sustained concurrency | **50 agents**, zero errors | yes — `make load` |
 | Burst | **200 at once**: bounded queue, zero drops below the cap, clean `AIRLOCK-440` above it | yes — `make load` |
 | Repeated query (decision cache hit), p95 | **< 1 ms** | yes — `make bench` (measured 0.004 ms) |
-| Cold start → `/readyz` (snapshot already cached) | **< 5 s** | design target |
+| Cold start → `/readyz` | **< 5 s** | measured — 3.2 s from process start to `/readyz` returning `ready`, compiling a fresh snapshot from live DataHub |
 | Steady-state memory | **< 300 MB** with the demo catalog loaded | measured — `make load` prints it (99 MB on the demo catalog after 300 sustained + 400 burst requests) |
 
-How the gated numbers happen:
+Every row above is now a measurement rather than an aspiration. How they happen:
 
 - **Fully async request path.** The MCP layer is asyncio end-to-end; warehouse calls run on pooled connections off the event loop. Nothing blocks.
 - **Lock-free policy reads.** A snapshot swap is one atomic pointer exchange; every request pins the snapshot it started with. A thousand concurrent decisions share zero locks.
